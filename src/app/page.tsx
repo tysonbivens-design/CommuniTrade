@@ -102,7 +102,7 @@ export default function App() {
         <AuthModal
           mode={authMode}
           onClose={() => setShowAuth(false)}
-          onSuccess={(msg) => { setShowAuth(false); showToast(msg) }}
+          onSuccess={(msg: string) => { setShowAuth(false); showToast(msg) }}
           showToast={showToast}
         />
       )}
