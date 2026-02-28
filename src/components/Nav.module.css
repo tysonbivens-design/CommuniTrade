@@ -1,0 +1,57 @@
+.nav {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--bark);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 2rem; height: 60px;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.2);
+}
+.logo {
+  font-family: 'Fraunces', serif; font-size: 1.45rem; font-weight: 800;
+  color: var(--gold); letter-spacing: -0.02em; cursor: pointer; white-space: nowrap;
+}
+.logo span { color: var(--rust-light); }
+.links { display: flex; gap: 0.2rem; flex: 1; padding: 0 1.5rem; }
+.link {
+  padding: 0.4rem 0.85rem; border-radius: 6px; cursor: pointer;
+  font-size: 0.85rem; font-weight: 500; color: rgba(255,255,255,0.65);
+  transition: all 0.2s; border: none; background: none; white-space: nowrap;
+}
+.link:hover, .link.active { background: rgba(255,255,255,0.12); color: #fff; }
+.badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--rust); color: #fff; border-radius: 10px;
+  font-size: 0.7rem; font-weight: 700; padding: 0.1rem 0.4rem;
+  margin-left: 0.3rem; min-width: 18px;
+}
+.actions { display: flex; gap: 0.5rem; align-items: center; }
+.locationPill {
+  display: flex; align-items: center; gap: 0.35rem;
+  background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 20px; padding: 0.3rem 0.75rem;
+  color: rgba(255,255,255,0.6); font-size: 0.78rem; cursor: pointer; white-space: nowrap;
+}
+.locationPill:hover { background: rgba(255,255,255,0.14); color: #fff; }
+.navBtn {
+  padding: 0.4rem 1rem; border-radius: 6px; font-size: 0.85rem; font-weight: 500;
+  cursor: pointer; transition: all 0.2s; border: none; white-space: nowrap;
+}
+.outline { background: transparent; border: 1.5px solid rgba(255,255,255,0.3); color: #fff; }
+.outline:hover { border-color: #fff; }
+.primary { background: var(--rust); color: #fff; }
+.primary:hover { background: var(--rust-light); }
+.userMenu { display: flex; gap: 0.5rem; align-items: center; }
+.userBtn {
+  display: flex; align-items: center; gap: 0.5rem;
+  background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15);
+  color: #fff; border-radius: 6px; padding: 0.35rem 0.75rem; font-size: 0.85rem; cursor: pointer;
+}
+.userBtn:hover { background: rgba(255,255,255,0.18); }
+.avatarSmall {
+  width: 22px; height: 22px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.7rem; font-weight: 700; color: #fff; flex-shrink: 0;
+}
+@media (max-width: 768px) {
+  .links { display: none; }
+  .locationPill { display: none; }
+}
