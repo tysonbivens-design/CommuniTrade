@@ -12,7 +12,6 @@
     "react": "^18",
     "react-dom": "^18",
     "@supabase/supabase-js": "^2.44.4",
-    "@supabase/auth-helpers-nextjs": "^0.10.0",
     "resend": "^3.4.0",
     "@anthropic-ai/sdk": "^0.27.0"
   },
