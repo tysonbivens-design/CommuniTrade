@@ -1,6 +1,4 @@
 import { createClient } from '@supabase/supabase-js'
-import { createClientComponentClient, createServerComponentClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -9,11 +7,7 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 // For use in Client Components
-export const createBrowserClient = () => createClientComponentClient()
-
-// For use in Server Components
-export const createServerClient = () =>
-  createServerComponentClient({ cookies })
+export const createBrowserClient = () => createClient(supabaseUrl, supabaseAnonKey)
 
 export type Database = {
   public: {
