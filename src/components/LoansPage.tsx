@@ -3,96 +3,147 @@ import { useState, useEffect } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
 import styles from './LoansPage.module.css'
 import modalStyles from './Modal.module.css'
+import type { Loan, LoanRequest, AppCtx } from '@/types'
 
-export default function LoansPage({ ctx }: any) {
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
+export default function LoansPage({ ctx }: { ctx: AppCtx }) {
   const { user, showToast } = ctx
-  const [tab, setTab] = useState<'lent' | 'borrowed' | 'requests'>('requests')
-  const [requests, setRequests] = useState<any[]>([])
-  const [lent, setLent] = useState<any[]>([])
-  const [borrowed, setBorrowed] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [reviewLoan, setReviewLoan] = useState<any>(null)
   const supabase = createBrowserClient()
 
-  useEffect(() => { if (user) loadAll() }, [user])
+  const [tab, setTab] = useState<'requests' | 'lent' | 'borrowed'>('requests')
+  const [requests, setRequests] = useState<LoanRequest[]>([])
+  const [lent, setLent] = useState<Loan[]>([])
+  const [borrowed, setBorrowed] = useState<Loan[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [reviewLoan, setReviewLoan] = useState<Loan | null>(null)
 
-  async function loadAll() {
-    setLoading(true)
-    // Pending requests for items I own
-    const { data: reqs } = await supabase
-      .from('loan_requests')
-      .select('*, items(title, category, user_id), profiles:requester_id(full_name, trust_score, avatar_color)')
-      .eq('items.user_id', user.id)
-      .eq('status', 'pending')
-    setRequests(reqs?.filter(r => r.items) || [])
+  const userId = user?.id ?? null
 
-    // Active loans I've lent
-    const { data: lentData } = await supabase
-      .from('loans')
-      .select('*, items(title, category), borrower:profiles!loans_borrower_id_fkey(full_name, avatar_color)')
-      .eq('lender_id', user.id)
-      .in('status', ['active', 'overdue'])
-    setLent(lentData || [])
+  useEffect(() => {
+    if (!userId) return
+    let cancelled = false
 
-    // Active loans I've borrowed
-    const { data: borrowedData } = await supabase
-      .from('loans')
-      .select('*, items(title, category), lender:profiles!loans_lender_id_fkey(full_name, avatar_color)')
-      .eq('borrower_id', user.id)
-      .in('status', ['active', 'overdue'])
-    setBorrowed(borrowedData || [])
-    setLoading(false)
-  }
+    async function loadAll() {
+      setLoading(true)
+      setError(null)
 
-  async function approveRequest(req: any) {
+      const [reqResult, lentResult, borrowedResult] = await Promise.all([
+        supabase
+          .from('loan_requests')
+          .select('*, items(id, title, category, user_id), profiles:requester_id(full_name, email, trust_score, avatar_color)')
+          .eq('status', 'pending'),
+
+        supabase
+          .from('loans')
+          .select('*, items(id, title, category), borrower:profiles!loans_borrower_id_fkey(full_name, avatar_color)')
+          .eq('lender_id', userId)
+          .in('status', ['active', 'overdue']),
+
+        supabase
+          .from('loans')
+          .select('*, items(id, title, category), lender:profiles!loans_lender_id_fkey(full_name, avatar_color)')
+          .eq('borrower_id', userId)
+          .in('status', ['active', 'overdue']),
+      ])
+
+      if (cancelled) return
+
+      if (reqResult.error || lentResult.error || borrowedResult.error) {
+        setError('Could not load loans. Please try refreshing.')
+        setLoading(false)
+        return
+      }
+
+      // Filter requests to only those for items this user owns
+      const myRequests = (reqResult.data as LoanRequest[]).filter(r => r.items?.user_id === userId)
+
+      setRequests(myRequests)
+      setLent(lentResult.data as Loan[])
+      setBorrowed(borrowedResult.data as Loan[])
+      setLoading(false)
+    }
+
+    loadAll()
+    return () => { cancelled = true }
+  }, [userId])
+
+  async function approveRequest(req: LoanRequest) {
+    if (!userId || !req.items) return
     const dueAt = new Date()
     dueAt.setDate(dueAt.getDate() + req.duration_days)
+
     const { error } = await supabase.from('loans').insert({
-      item_id: req.item_id, lender_id: user.id, borrower_id: req.requester_id,
-      request_id: req.id, duration_days: req.duration_days, due_at: dueAt.toISOString(), status: 'active'
+      item_id: req.item_id, lender_id: userId, borrower_id: req.requester_id,
+      request_id: req.id, duration_days: req.duration_days,
+      due_at: dueAt.toISOString(), status: 'active',
     })
-    if (error) return showToast(error.message, 'error')
-    await supabase.from('loan_requests').update({ status: 'approved' }).eq('id', req.id)
-    await supabase.from('items').update({ status: 'loaned' }).eq('id', req.item_id)
-    await supabase.from('notifications').insert({
-      user_id: req.requester_id, type: 'loan_approved', title: 'Borrow Request Approved! ✅',
-      body: `Your request to borrow "${req.items.title}" was approved. Due back in ${req.duration_days} days.`
-    })
-    await fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'loan_approved', item: req.items, borrowerEmail: req.profiles?.email, borrowerName: req.profiles?.full_name, lenderName: user.email, dueDate: dueAt.toLocaleDateString() })
-    })
+    if (error) { showToast(error.message, 'error'); return }
+
+    await Promise.all([
+      supabase.from('loan_requests').update({ status: 'approved' }).eq('id', req.id),
+      supabase.from('items').update({ status: 'loaned' }).eq('id', req.item_id),
+      supabase.from('notifications').insert({
+        user_id: req.requester_id, type: 'loan_approved',
+        title: 'Borrow Request Approved! ✅',
+        body: `Your request to borrow "${req.items.title}" was approved. Due back in ${req.duration_days} days.`,
+      }),
+    ])
+
+    fetch('/api/notify', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'loan_approved', item: req.items,
+        borrowerEmail: req.profiles?.email, borrowerName: req.profiles?.full_name,
+        lenderName: user?.email, dueDate: dueAt.toLocaleDateString(),
+      }),
+    }).catch(() => {})
+
     showToast('Request approved! ✅')
-    loadAll()
+    setRequests(r => r.filter(x => x.id !== req.id))
   }
 
-  async function declineRequest(req: any) {
-    await supabase.from('loan_requests').update({ status: 'declined' }).eq('id', req.id)
+  async function declineRequest(req: LoanRequest) {
+    const { error } = await supabase.from('loan_requests').update({ status: 'declined' }).eq('id', req.id)
+    if (error) { showToast(error.message, 'error'); return }
     showToast('Request declined')
-    loadAll()
+    setRequests(r => r.filter(x => x.id !== req.id))
   }
 
-  async function confirmReturn(loan: any) {
-    const field = loan.lender_id === user.id ? 'lender_confirmed_return' : 'borrower_confirmed_return'
-    await supabase.from('loans').update({ [field]: true }).eq('id', loan.id)
-    // Check if both confirmed
+  async function confirmReturn(loan: Loan) {
+    if (!userId) return
+    const field = loan.lender_id === userId ? 'lender_confirmed_return' : 'borrower_confirmed_return'
+    const { error } = await supabase.from('loans').update({ [field]: true }).eq('id', loan.id)
+    if (error) { showToast(error.message, 'error'); return }
+
     const updated = { ...loan, [field]: true }
     if (updated.lender_confirmed_return && updated.borrower_confirmed_return) {
-      await supabase.from('loans').update({ status: 'returned', returned_at: new Date().toISOString() }).eq('id', loan.id)
-      await supabase.from('items').update({ status: 'available' }).eq('id', loan.item_id)
+      await Promise.all([
+        supabase.from('loans').update({ status: 'returned', returned_at: new Date().toISOString() }).eq('id', loan.id),
+        supabase.from('items').update({ status: 'available' }).eq('id', loan.item_id),
+      ])
       showToast('Return confirmed! Item is available again ✅')
       setReviewLoan(loan)
+      setLent(l => l.filter(x => x.id !== loan.id))
+      setBorrowed(l => l.filter(x => x.id !== loan.id))
     } else {
       showToast('Confirmed on your end — waiting for the other party to confirm too')
     }
-    loadAll()
   }
 
-  function formatDate(d: string) {
-    return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  }
-  function isOverdue(dueAt: string) { return new Date(dueAt) < new Date() }
+  const formatDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const isOverdue = (dueAt: string) => new Date(dueAt) < new Date()
 
-  if (!user) return <div className="container"><div className="section" style={{ textAlign: 'center', padding: '5rem' }}><h2>Sign in to view your loans</h2></div></div>
+  if (!userId) {
+    return (
+      <div className="container">
+        <div className="section" style={{ textAlign: 'center', padding: '5rem' }}>
+          <h2>Sign in to view your loans</h2>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ position: 'relative', zIndex: 1 }}>
@@ -103,114 +154,165 @@ export default function LoansPage({ ctx }: any) {
 
           <div className="tabs">
             <button className={`tab ${tab === 'requests' ? 'active' : ''}`} onClick={() => setTab('requests')}>
-              Pending Requests {requests.length > 0 && <span style={{ background: 'var(--rust)', color: '#fff', borderRadius: 10, padding: '0.05rem 0.4rem', fontSize: '0.72rem', marginLeft: '0.3rem' }}>{requests.length}</span>}
+              Pending Requests
+              {requests.length > 0 && (
+                <span style={{ background: 'var(--rust)', color: '#fff', borderRadius: 10, padding: '0.05rem 0.4rem', fontSize: '0.72rem', marginLeft: '0.3rem' }}>
+                  {requests.length}
+                </span>
+              )}
             </button>
-            <button className={`tab ${tab === 'lent' ? 'active' : ''}`} onClick={() => setTab('lent')}>Items I've Lent ({lent.length})</button>
-            <button className={`tab ${tab === 'borrowed' ? 'active' : ''}`} onClick={() => setTab('borrowed')}>Items I've Borrowed ({borrowed.length})</button>
+            <button className={`tab ${tab === 'lent' ? 'active' : ''}`} onClick={() => setTab('lent')}>
+              Items I've Lent ({lent.length})
+            </button>
+            <button className={`tab ${tab === 'borrowed' ? 'active' : ''}`} onClick={() => setTab('borrowed')}>
+              Items I've Borrowed ({borrowed.length})
+            </button>
           </div>
 
-          {loading ? <p style={{ color: 'var(--muted)' }}>Loading…</p> : (
+          {loading ? (
+            <p style={{ color: 'var(--muted)' }}>Loading…</p>
+          ) : error ? (
+            <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}>⚠️ {error}</div>
+          ) : (
             <>
               {tab === 'requests' && (
-                requests.length === 0 ? <EmptyState icon="📬" text="No pending borrow requests" /> :
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  {requests.map(req => (
-                    <div key={req.id} className={styles.requestCard}>
-                      <div className={styles.requestInfo}>
-                        <span className="avatar" style={{ background: req.profiles?.avatar_color || '#C4622D', width: 36, height: 36 }}>{req.profiles?.full_name?.[0]}</span>
-                        <div>
-                          <p><strong>{req.profiles?.full_name}</strong> wants to borrow <strong>{req.items?.title}</strong></p>
-                          <p style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>For {req.duration_days} days · Trust ⭐{req.profiles?.trust_score?.toFixed(1)}</p>
-                          {req.message && <p style={{ fontSize: '0.82rem', color: 'var(--muted)', fontStyle: 'italic', marginTop: '0.25rem' }}>"{req.message}"</p>}
+                requests.length === 0 ? <EmptyState icon="📬" text="No pending borrow requests" /> : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {requests.map(req => (
+                      <div key={req.id} className={styles.requestCard}>
+                        <div className={styles.requestInfo}>
+                          <span className="avatar" style={{ background: req.profiles?.avatar_color || '#C4622D', width: 36, height: 36 }}>
+                            {req.profiles?.full_name?.[0]}
+                          </span>
+                          <div>
+                            <p><strong>{req.profiles?.full_name}</strong> wants to borrow <strong>{req.items?.title}</strong></p>
+                            <p style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
+                              For {req.duration_days} days · Trust ⭐{req.profiles?.trust_score?.toFixed(1)}
+                            </p>
+                            {req.message && (
+                              <p style={{ fontSize: '0.82rem', color: 'var(--muted)', fontStyle: 'italic', marginTop: '0.25rem' }}>
+                                "{req.message}"
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className={styles.requestActions}>
+                          <button className="btn btn-primary btn-sm" onClick={() => approveRequest(req)}>Approve ✅</button>
+                          <button className="btn btn-outline btn-sm" onClick={() => declineRequest(req)}>Decline</button>
                         </div>
                       </div>
-                      <div className={styles.requestActions}>
-                        <button className="btn btn-primary btn-sm" onClick={() => approveRequest(req)}>Approve ✅</button>
-                        <button className="btn btn-outline btn-sm" onClick={() => declineRequest(req)}>Decline</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )
               )}
 
-              {(tab === 'lent' || tab === 'borrowed') && (
-                <div style={{ background: '#fff', borderRadius: 12, border: '1px solid var(--border)', overflow: 'hidden', boxShadow: '0 2px 8px var(--shadow)' }}>
-                  <table className={styles.table}>
-                    <thead>
-                      <tr>
-                        <th>Item</th>
-                        <th>{tab === 'lent' ? 'Borrowed By' : 'Owner'}</th>
-                        <th>Due Back</th>
-                        <th>Status</th>
-                        <th>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(tab === 'lent' ? lent : borrowed).map(loan => {
-                        const overdue = isOverdue(loan.due_at)
-                        const person = tab === 'lent' ? loan.borrower : loan.lender
-                        return (
-                          <tr key={loan.id}>
-                            <td><strong>{loan.items?.title}</strong></td>
-                            <td>
-                              <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                <span className="avatar" style={{ background: person?.avatar_color || '#C4622D', width: 22, height: 22, fontSize: '0.6rem' }}>{person?.full_name?.[0]}</span>
-                                {person?.full_name}
-                              </span>
-                            </td>
-                            <td>{formatDate(loan.due_at)}</td>
-                            <td>
-                              <span className={`badge ${overdue ? 'badge-overdue' : 'badge-loaned'}`}>
-                                {overdue ? '⚠ Overdue' : 'Active'}
-                              </span>
-                            </td>
-                            <td>
-                              {overdue && tab === 'lent' ? (
-                                <button className="btn btn-primary btn-sm" onClick={() => showToast('📨 Reminder email sent!')}>Send Reminder</button>
-                              ) : (
-                                <button className="btn btn-outline btn-sm" onClick={() => confirmReturn(loan)}>Confirm Return</button>
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                      {(tab === 'lent' ? lent : borrowed).length === 0 && (
-                        <tr><td colSpan={5}><EmptyState icon={tab === 'lent' ? '📤' : '📥'} text={`Nothing ${tab} yet`} /></td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              {(tab === 'lent' || tab === 'borrowed') && (() => {
+                const list = tab === 'lent' ? lent : borrowed
+                if (list.length === 0) return <EmptyState icon={tab === 'lent' ? '📤' : '📥'} text={`Nothing ${tab} yet`} />
+                return (
+                  <div style={{ background: '#fff', borderRadius: 12, border: '1px solid var(--border)', overflow: 'hidden', boxShadow: '0 2px 8px var(--shadow)' }}>
+                    <table className={styles.table}>
+                      <thead>
+                        <tr>
+                          <th>Item</th>
+                          <th>{tab === 'lent' ? 'Borrowed By' : 'Owner'}</th>
+                          <th>Due Back</th>
+                          <th>Status</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {list.map(loan => {
+                          const overdue = isOverdue(loan.due_at)
+                          const person = tab === 'lent' ? loan.borrower : loan.lender
+                          return (
+                            <tr key={loan.id}>
+                              <td><strong>{loan.items?.title}</strong></td>
+                              <td>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                  <span className="avatar" style={{ background: person?.avatar_color || '#C4622D', width: 22, height: 22, fontSize: '0.6rem' }}>
+                                    {person?.full_name?.[0]}
+                                  </span>
+                                  {person?.full_name}
+                                </span>
+                              </td>
+                              <td>{formatDate(loan.due_at)}</td>
+                              <td>
+                                <span className={`badge ${overdue ? 'badge-overdue' : 'badge-loaned'}`}>
+                                  {overdue ? '⚠ Overdue' : 'Active'}
+                                </span>
+                              </td>
+                              <td>
+                                {overdue && tab === 'lent' ? (
+                                  <button className="btn btn-primary btn-sm" onClick={() => showToast('📨 Reminder email sent!')}>Send Reminder</button>
+                                ) : (
+                                  <button className="btn btn-outline btn-sm" onClick={() => confirmReturn(loan)}>Confirm Return</button>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              })()}
             </>
           )}
         </div>
       </div>
 
-      {reviewLoan && <ReviewModal loan={reviewLoan} user={user} onClose={() => setReviewLoan(null)} onSuccess={() => { setReviewLoan(null); showToast('Review submitted! ⭐') }} showToast={showToast} />}
+      {reviewLoan && (
+        <ReviewModal
+          loan={reviewLoan}
+          userId={userId}
+          onClose={() => setReviewLoan(null)}
+          onSuccess={() => { setReviewLoan(null); showToast('Review submitted! ⭐') }}
+          showToast={showToast}
+        />
+      )}
     </div>
   )
 }
 
-function EmptyState({ icon, text }: any) {
-  return <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}><div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>{icon}</div><p>{text}</p></div>
+function EmptyState({ icon, text }: { icon: string; text: string }) {
+  return (
+    <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}>
+      <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>{icon}</div>
+      <p>{text}</p>
+    </div>
+  )
 }
 
-function ReviewModal({ loan, user, onClose, onSuccess, showToast }: any) {
+interface ReviewModalProps {
+  loan: Loan
+  userId: string
+  onClose: () => void
+  onSuccess: () => void
+  showToast: AppCtx['showToast']
+}
+
+function ReviewModal({ loan, userId, onClose, onSuccess, showToast }: ReviewModalProps) {
+  const supabase = createBrowserClient()
   const [rating, setRating] = useState(5)
   const [comment, setComment] = useState('')
   const [loading, setLoading] = useState(false)
-  const supabase = createBrowserClient()
-  const revieweeId = loan.lender_id === user.id ? loan.borrower_id : loan.lender_id
+  const revieweeId = loan.lender_id === userId ? loan.borrower_id : loan.lender_id
 
-  async function submit(e: any) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     try {
-      const { error } = await supabase.from('reviews').insert({ reviewer_id: user.id, reviewee_id: revieweeId, loan_id: loan.id, rating, comment })
+      const { error } = await supabase.from('reviews').insert({
+        reviewer_id: userId, reviewee_id: revieweeId, loan_id: loan.id, rating, comment,
+      })
       if (error) throw error
       onSuccess()
-    } catch (err: any) { showToast(err.message, 'error') }
-    finally { setLoading(false) }
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Could not submit review', 'error')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -223,8 +325,11 @@ function ReviewModal({ loan, user, onClose, onSuccess, showToast }: any) {
           <div className="form-group">
             <label className="label">Rating</label>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
-              {[1,2,3,4,5].map(n => (
-                <button key={n} type="button" onClick={() => setRating(n)} style={{ background: 'none', border: 'none', fontSize: '1.8rem', cursor: 'pointer', opacity: n <= rating ? 1 : 0.3, transition: 'opacity 0.2s' }}>⭐</button>
+              {[1, 2, 3, 4, 5].map(n => (
+                <button key={n} type="button" onClick={() => setRating(n)}
+                  style={{ background: 'none', border: 'none', fontSize: '1.8rem', cursor: 'pointer', opacity: n <= rating ? 1 : 0.3, transition: 'opacity 0.2s' }}>
+                  ⭐
+                </button>
               ))}
             </div>
           </div>
