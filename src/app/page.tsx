@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
 import Nav from '@/components/Nav'
 import HomePage from '@/components/HomePage'
@@ -15,15 +15,16 @@ import Toast from '@/components/Toast'
 export type Page = 'home' | 'library' | 'barter' | 'loans' | 'notifications' | 'profile' | 'admin'
 
 export default function App() {
-  const [page, setPage] = useState<Page>('home')
-  const [user, setUser] = useState<any>(null)
-  const [profile, setProfile] = useState<any>(null)
+  const [page, setPage]         = useState<Page>('home')
+  const [user, setUser]         = useState<any>(null)
+  const [profile, setProfile]   = useState<any>(null)
   const [showAuth, setShowAuth] = useState(false)
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup')
-  const [toast, setToast] = useState<{ msg: string; type?: 'success' | 'error' } | null>(null)
+  const [toast, setToast]       = useState<{ msg: string; type?: 'success' | 'error' } | null>(null)
   const [notifCount, setNotifCount] = useState(0)
   const supabase = createBrowserClient()
 
+  // ── Auth state ────────────────────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
@@ -37,30 +38,30 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
+  // ── Realtime notification badge ───────────────────────────────────────────
   useEffect(() => {
     if (!user) return
     const channel = supabase
-      .channel('notifications')
+      .channel(`notifs-${user.id}`)
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'notifications',
         filter: `user_id=eq.${user.id}`
       }, () => setNotifCount(c => c + 1))
       .subscribe()
-    loadNotifCount()
+    loadNotifCount(user.id)
     return () => { supabase.removeChannel(channel) }
-  }, [user])
+  }, [user?.id]) // only user.id, not the whole user object
 
   async function loadProfile(uid: string) {
     const { data } = await supabase.from('profiles').select('*').eq('id', uid).single()
     setProfile(data)
   }
 
-  async function loadNotifCount() {
-    if (!user) return
+  async function loadNotifCount(uid: string) {
     const { count } = await supabase
       .from('notifications')
       .select('*', { count: 'exact', head: true })
-      .eq('user_id', user.id)
+      .eq('user_id', uid)
       .eq('read', false)
     setNotifCount(count || 0)
   }
@@ -75,6 +76,8 @@ export default function App() {
     else action()
   }
 
+  // Pass STABLE references — pages receive what they need without causing
+  // re-render loops. Profile is passed whole only to pages that need it.
   const ctx = { user, profile, showToast, requireAuth, navigate: setPage }
 
   return (
@@ -90,13 +93,13 @@ export default function App() {
         onSignOut={async () => { await supabase.auth.signOut(); showToast('Signed out') }}
       />
 
-      {page === 'home' && <HomePage ctx={ctx} />}
-      {page === 'library' && <LibraryPage ctx={ctx} />}
-      {page === 'barter' && <BarterPage ctx={ctx} />}
-      {page === 'loans' && <LoansPage ctx={ctx} />}
-      {page === 'notifications' && <NotificationsPage ctx={ctx} onRead={loadNotifCount} />}
-      {page === 'profile' && <ProfilePage ctx={ctx} />}
-      {page === 'admin' && profile?.is_admin && <AdminPage ctx={ctx} />}
+      {page === 'home'          && <HomePage ctx={ctx} />}
+      {page === 'library'       && <LibraryPage ctx={ctx} />}
+      {page === 'barter'        && <BarterPage ctx={ctx} />}
+      {page === 'loans'         && <LoansPage ctx={ctx} />}
+      {page === 'notifications' && <NotificationsPage ctx={ctx} onRead={() => loadNotifCount(user?.id)} />}
+      {page === 'profile'       && <ProfilePage ctx={ctx} onProfileUpdate={loadProfile} />}
+      {page === 'admin'         && profile?.is_admin && <AdminPage ctx={ctx} />}
 
       {showAuth && (
         <AuthModal
