@@ -1,9 +1,40 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import styles from './Nav.module.css'
 
+async function getLocationLabel(zipCode?: string): Promise<string> {
+  // Logged-in user with a zip code — look it up
+  if (zipCode) {
+    try {
+      const res = await fetch(`https://api.zippopotam.us/us/${zipCode}`)
+      if (res.ok) {
+        const data = await res.json()
+        const place = data.places?.[0]
+        if (place) return `${place['place name']}, ${place['state abbreviation']}`
+      }
+    } catch {}
+    return zipCode // fallback: just show the zip
+  }
+
+  // Logged-out user — approximate from IP
+  try {
+    const res = await fetch('https://ipapi.co/json/')
+    if (res.ok) {
+      const data = await res.json()
+      if (data.city && data.region_code) return `${data.city}, ${data.region_code}`
+    }
+  } catch {}
+
+  return 'Your Area'
+}
+
 export default function Nav({ page, setPage, user, profile, notifCount, onSignIn, onSignUp, onSignOut }: any) {
-  const [locationOpen, setLocationOpen] = useState(false)
+  const [locationLabel, setLocationLabel] = useState('...')
+
+  useEffect(() => {
+    // Re-run whenever login state or profile zip changes
+    getLocationLabel(profile?.zip_code).then(setLocationLabel)
+  }, [profile?.zip_code, user])
 
   return (
     <nav className={styles.nav}>
@@ -31,8 +62,8 @@ export default function Nav({ page, setPage, user, profile, notifCount, onSignIn
       </div>
 
       <div className={styles.actions}>
-        <div className={styles.locationPill} onClick={() => setLocationOpen(!locationOpen)}>
-          📍 Denver, CO · 5mi
+        <div className={styles.locationPill}>
+          📍 {locationLabel}
         </div>
         {user ? (
           <div className={styles.userMenu}>
