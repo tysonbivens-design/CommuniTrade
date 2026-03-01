@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
     const { image, mediaType } = await req.json()
 
     const response = await anthropic.messages.create({
-      model: 'claude-opus-4-6',
+      model: 'claude-sonnet-4-6',  // Sonnet: same quality for vision tasks, ~5x cheaper than Opus
       max_tokens: 1500,
       messages: [{
         role: 'user',
