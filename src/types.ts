@@ -20,10 +20,12 @@ export interface Profile {
   zip_code: string | null
   avatar_color: string | null
   trust_score: number
+  review_count: number
   is_admin: boolean
   lat: number | null
   lng: number | null
   radius_miles: number | null
+  created_at: string
 }
 
 export interface Item {
