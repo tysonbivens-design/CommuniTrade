@@ -6,8 +6,18 @@ import styles from './BarterPage.module.css'
 
 const CATEGORIES = ['Skills & Services', 'Food & Garden', 'Home Goods', 'Electronics', 'Clothing', 'Media', 'Other']
 
+// Haversine formula — calculates miles between two lat/lng points
+function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 3958.8
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
 export default function BarterPage({ ctx }: any) {
-  const { user, showToast, requireAuth } = ctx
+  const { user, profile, showToast, requireAuth } = ctx
   const [posts, setPosts] = useState<any[]>([])
   const [matches, setMatches] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -15,16 +25,29 @@ export default function BarterPage({ ctx }: any) {
   const [showAdd, setShowAdd] = useState(false)
   const supabase = createBrowserClient()
 
-  useEffect(() => { loadPosts() }, [tab])
+  useEffect(() => { loadPosts() }, [tab, profile?.radius_miles])
 
   async function loadPosts() {
     setLoading(true)
     const { data } = await supabase
       .from('barter_posts')
-      .select('*, profiles(full_name, trust_score, avatar_color)')
+      .select('*, profiles(full_name, trust_score, avatar_color, lat, lng)')
       .eq('status', 'active')
       .order('created_at', { ascending: false })
-    setPosts(data || [])
+
+    let results = data || []
+
+    // Filter by radius if logged in and we have coordinates
+    if (user && profile?.lat && profile?.lng && profile?.radius_miles) {
+      results = results.filter(post => {
+        if (post.user_id === user.id) return true
+        if (!post.profiles?.lat || !post.profiles?.lng) return true
+        const miles = distanceMiles(profile.lat, profile.lng, post.profiles.lat, post.profiles.lng)
+        return miles <= profile.radius_miles
+      })
+    }
+
+    setPosts(results)
 
     if (user) {
       const { data: m } = await supabase
@@ -38,6 +61,9 @@ export default function BarterPage({ ctx }: any) {
   }
 
   const displayPosts = tab === 'matches' ? [] : posts
+  const radiusNote = user && profile?.radius_miles
+    ? `Showing trades within ${profile.radius_miles} miles of you`
+    : 'Post what you have, find what you need. Matches happen automatically.'
 
   return (
     <div style={{ position: 'relative', zIndex: 1 }}>
@@ -46,16 +72,18 @@ export default function BarterPage({ ctx }: any) {
           <div className={styles.header}>
             <div>
               <h1 className="section-title">Barter Board</h1>
-              <p className="section-subtitle">Post what you have, find what you need. Matches happen automatically.</p>
+              <p className="section-subtitle">{radiusNote}</p>
             </div>
             <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>+ Post a Trade</button>
           </div>
 
           <div className="tabs">
             <button className={`tab ${tab === 'all' ? 'active' : ''}`} onClick={() => setTab('all')}>All Posts</button>
-            {user && <button className={`tab ${tab === 'matches' ? 'active' : ''}`} onClick={() => setTab('matches')}>
-              🔥 My Matches {matches.length > 0 && <span style={{ background: 'var(--rust)', color: '#fff', borderRadius: 10, padding: '0.1rem 0.4rem', fontSize: '0.72rem', marginLeft: '0.3rem' }}>{matches.length}</span>}
-            </button>}
+            {user && (
+              <button className={`tab ${tab === 'matches' ? 'active' : ''}`} onClick={() => setTab('matches')}>
+                🔥 My Matches {matches.length > 0 && <span style={{ background: 'var(--rust)', color: '#fff', borderRadius: 10, padding: '0.1rem 0.4rem', fontSize: '0.72rem', marginLeft: '0.3rem' }}>{matches.length}</span>}
+              </button>
+            )}
             {CATEGORIES.map(c => (
               <button key={c} className={`tab ${tab === c ? 'active' : ''}`} onClick={() => setTab(c)}>{c}</button>
             ))}
@@ -103,7 +131,12 @@ export default function BarterPage({ ctx }: any) {
               {displayPosts.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)', gridColumn: '1/-1' }}>
                   <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>📋</div>
-                  <p>No trades posted yet. Be the first!</p>
+                  <p>
+                    {user && profile?.radius_miles
+                      ? `No trades within ${profile.radius_miles} miles. Try increasing your radius by clicking the 📍 location pill above.`
+                      : 'No trades posted yet. Be the first!'
+                    }
+                  </p>
                 </div>
               )}
             </div>
@@ -111,7 +144,14 @@ export default function BarterPage({ ctx }: any) {
         </div>
       </div>
 
-      {showAdd && <AddBarterModal user={user} onClose={() => setShowAdd(false)} onSuccess={() => { setShowAdd(false); loadPosts(); showToast('Trade posted! We\'ll notify you of matches 🤝') }} showToast={showToast} />}
+      {showAdd && (
+        <AddBarterModal
+          user={user}
+          onClose={() => setShowAdd(false)}
+          onSuccess={() => { setShowAdd(false); loadPosts(); showToast('Trade posted! We\'ll notify you of matches 🤝') }}
+          showToast={showToast}
+        />
+      )}
     </div>
   )
 }
@@ -159,7 +199,6 @@ function AddBarterModal({ user, onClose, onSuccess, showToast }: any) {
     try {
       const { data, error } = await supabase.from('barter_posts').insert({ user_id: user.id, ...form }).select().single()
       if (error) throw error
-      // Trigger matching
       await fetch('/api/barter-match', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ postId: data.id })
