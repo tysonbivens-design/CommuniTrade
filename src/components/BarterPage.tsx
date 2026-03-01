@@ -1,12 +1,12 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
-import modalStyles from './Modal.module.css'
 import styles from './BarterPage.module.css'
+import modalStyles from './Modal.module.css'
+import type { BarterPost, BarterMatch, AppCtx } from '@/types'
 
-const CATEGORIES = ['Skills & Services', 'Food & Garden', 'Home Goods', 'Electronics', 'Clothing', 'Media', 'Other']
+const BARTER_CATEGORIES = ['Skills & Services', 'Food & Garden', 'Home Goods', 'Electronics', 'Clothing', 'Media', 'Other']
 
-// Haversine formula — calculates miles between two lat/lng points
 function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 3958.8
   const dLat = (lat2 - lat1) * Math.PI / 180
@@ -16,53 +16,81 @@ function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): 
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-export default function BarterPage({ ctx }: any) {
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
+export default function BarterPage({ ctx }: { ctx: AppCtx }) {
   const { user, profile, showToast, requireAuth } = ctx
-  const [posts, setPosts] = useState<any[]>([])
-  const [matches, setMatches] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('all')
-  const [showAdd, setShowAdd] = useState(false)
   const supabase = createBrowserClient()
 
-  useEffect(() => { loadPosts() }, [tab, profile?.radius_miles])
+  const [posts, setPosts] = useState<BarterPost[]>([])
+  const [matches, setMatches] = useState<BarterMatch[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [tab, setTab] = useState('all')
+  const [showAdd, setShowAdd] = useState(false)
 
-  async function loadPosts() {
-    setLoading(true)
-    const { data } = await supabase
-      .from('barter_posts')
-      .select('*, profiles(full_name, trust_score, avatar_color, lat, lng)')
-      .eq('status', 'active')
-      .order('created_at', { ascending: false })
+  // Stable primitive deps
+  const userId = user?.id ?? null
+  const userLat = profile?.lat ?? null
+  const userLng = profile?.lng ?? null
+  const radiusMiles = profile?.radius_miles ?? null
 
-    let results = data || []
+  useEffect(() => {
+    let cancelled = false
 
-    // Filter by radius if logged in and we have coordinates
-    if (user && profile?.lat && profile?.lng && profile?.radius_miles) {
-      results = results.filter(post => {
-        if (post.user_id === user.id) return true
-        if (!post.profiles?.lat || !post.profiles?.lng) return true
-        const miles = distanceMiles(profile.lat, profile.lng, post.profiles.lat, post.profiles.lng)
-        return miles <= profile.radius_miles
-      })
+    async function loadPosts() {
+      setLoading(true)
+      setError(null)
+
+      const { data, error: fetchError } = await supabase
+        .from('barter_posts')
+        .select('*, profiles(full_name, trust_score, avatar_color, lat, lng)')
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+
+      if (cancelled) return
+
+      if (fetchError) {
+        setError('Could not load barter posts. Please try refreshing.')
+        setLoading(false)
+        return
+      }
+
+      let results = (data as BarterPost[]) || []
+
+      if (userId && userLat && userLng && radiusMiles) {
+        results = results.filter(post => {
+          if (post.user_id === userId) return true
+          if (!post.profiles?.lat || !post.profiles?.lng) return true
+          return distanceMiles(userLat, userLng, post.profiles.lat, post.profiles.lng) <= radiusMiles
+        })
+      }
+
+      setPosts(results)
+
+      if (userId) {
+        const { data: m, error: matchError } = await supabase
+          .from('barter_matches')
+          .select('*, post_a:barter_posts!post_a_id(*, profiles(full_name, avatar_color)), post_b:barter_posts!post_b_id(*, profiles(full_name, avatar_color))')
+          .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
+          .eq('status', 'pending')
+
+        if (!cancelled && !matchError) setMatches(m as BarterMatch[])
+      }
+
+      setLoading(false)
     }
 
-    setPosts(results)
+    loadPosts()
+    return () => { cancelled = true }
+  }, [tab, userId, userLat, userLng, radiusMiles])
 
-    if (user) {
-      const { data: m } = await supabase
-        .from('barter_matches')
-        .select('*, post_a:barter_posts!post_a_id(*, profiles(full_name, avatar_color)), post_b:barter_posts!post_b_id(*, profiles(full_name, avatar_color))')
-        .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`)
-        .eq('status', 'pending')
-      setMatches(m || [])
-    }
-    setLoading(false)
-  }
+  const filteredPosts = tab === 'all' || tab === 'matches'
+    ? posts
+    : posts.filter(p => p.have_category === tab || p.want_category === tab)
 
-  const displayPosts = tab === 'matches' ? [] : posts
-  const radiusNote = user && profile?.radius_miles
-    ? `Showing trades within ${profile.radius_miles} miles of you`
+  const radiusNote = userId && radiusMiles
+    ? `Showing trades within ${radiusMiles} miles of you`
     : 'Post what you have, find what you need. Matches happen automatically.'
 
   return (
@@ -79,66 +107,41 @@ export default function BarterPage({ ctx }: any) {
 
           <div className="tabs">
             <button className={`tab ${tab === 'all' ? 'active' : ''}`} onClick={() => setTab('all')}>All Posts</button>
-            {user && (
+            {userId && (
               <button className={`tab ${tab === 'matches' ? 'active' : ''}`} onClick={() => setTab('matches')}>
-                🔥 My Matches {matches.length > 0 && <span style={{ background: 'var(--rust)', color: '#fff', borderRadius: 10, padding: '0.1rem 0.4rem', fontSize: '0.72rem', marginLeft: '0.3rem' }}>{matches.length}</span>}
+                🔥 My Matches
+                {matches.length > 0 && (
+                  <span style={{ background: 'var(--rust)', color: '#fff', borderRadius: 10, padding: '0.1rem 0.4rem', fontSize: '0.72rem', marginLeft: '0.3rem' }}>
+                    {matches.length}
+                  </span>
+                )}
               </button>
             )}
-            {CATEGORIES.map(c => (
+            {BARTER_CATEGORIES.map(c => (
               <button key={c} className={`tab ${tab === c ? 'active' : ''}`} onClick={() => setTab(c)}>{c}</button>
             ))}
           </div>
 
           {loading ? (
             <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>Loading…</div>
+          ) : error ? (
+            <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}>⚠️ {error}</div>
           ) : tab === 'matches' ? (
-            <div className={styles.grid}>
-              {matches.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)', gridColumn: '1/-1' }}>
-                  <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>🤝</div>
-                  <p>No matches yet. Post a trade and we'll alert you when someone's a fit!</p>
-                </div>
-              ) : matches.map(m => {
-                const myPost = m.user_a_id === user?.id ? m.post_a : m.post_b
-                const theirPost = m.user_a_id === user?.id ? m.post_b : m.post_a
-                return (
-                  <div key={m.id} className={styles.matchCard}>
-                    <div className={styles.matchBanner}>🎯 Barter Match!</div>
-                    <div className={styles.sides}>
-                      <div className={styles.side}>
-                        <div className={styles.sideLabel} style={{ color: 'var(--sage)' }}>You Offer</div>
-                        <div className={styles.sideContent}>{myPost?.have_description}</div>
-                      </div>
-                      <div className={styles.arrow}>⇄</div>
-                      <div className={styles.side}>
-                        <div className={styles.sideLabel} style={{ color: 'var(--rust)' }}>They Offer</div>
-                        <div className={styles.sideContent}>{theirPost?.have_description}</div>
-                      </div>
-                    </div>
-                    <div className={styles.matchFooter}>
-                      <span>with <strong>{theirPost?.profiles?.full_name}</strong></span>
-                      <button className="btn btn-primary btn-sm" onClick={() => showToast('📬 Connection request sent!')}>Connect</button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+            <MatchesGrid matches={matches} userId={userId} showToast={showToast} />
           ) : (
             <div className={styles.grid}>
-              {(tab === 'all' ? displayPosts : displayPosts.filter(p => p.have_category === tab || p.want_category === tab)).map(post => (
-                <BarterCard key={post.id} post={post} user={user} showToast={showToast} />
-              ))}
-              {displayPosts.length === 0 && (
+              {filteredPosts.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)', gridColumn: '1/-1' }}>
                   <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>📋</div>
                   <p>
-                    {user && profile?.radius_miles
-                      ? `No trades within ${profile.radius_miles} miles. Try increasing your radius by clicking the 📍 location pill above.`
-                      : 'No trades posted yet. Be the first!'
-                    }
+                    {userId && radiusMiles
+                      ? `No trades within ${radiusMiles} miles. Try increasing your radius by clicking the 📍 location pill above.`
+                      : 'No trades posted yet. Be the first!'}
                   </p>
                 </div>
-              )}
+              ) : filteredPosts.map(post => (
+                <BarterCard key={post.id} post={post} showToast={showToast} />
+              ))}
             </div>
           )}
         </div>
@@ -146,9 +149,13 @@ export default function BarterPage({ ctx }: any) {
 
       {showAdd && (
         <AddBarterModal
-          user={user}
+          userId={user!.id}
           onClose={() => setShowAdd(false)}
-          onSuccess={() => { setShowAdd(false); loadPosts(); showToast('Trade posted! We\'ll notify you of matches 🤝') }}
+          onSuccess={() => {
+            setShowAdd(false)
+            setTab('all')
+            showToast("Trade posted! We'll notify you of matches 🤝")
+          }}
           showToast={showToast}
         />
       )}
@@ -156,7 +163,50 @@ export default function BarterPage({ ctx }: any) {
   )
 }
 
-function BarterCard({ post, user, showToast }: any) {
+// ─── Matches Grid ──────────────────────────────────────────────────────────────
+
+function MatchesGrid({ matches, userId, showToast }: { matches: BarterMatch[]; userId: string | null; showToast: AppCtx['showToast'] }) {
+  if (matches.length === 0) {
+    return (
+      <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}>
+        <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>🤝</div>
+        <p>No matches yet. Post a trade and we'll alert you when someone's a fit!</p>
+      </div>
+    )
+  }
+  return (
+    <div className={styles.grid}>
+      {matches.map(m => {
+        const myPost = m.user_a_id === userId ? m.post_a : m.post_b
+        const theirPost = m.user_a_id === userId ? m.post_b : m.post_a
+        return (
+          <div key={m.id} className={styles.matchCard}>
+            <div className={styles.matchBanner}>🎯 Barter Match!</div>
+            <div className={styles.sides}>
+              <div className={styles.side}>
+                <div className={styles.sideLabel} style={{ color: 'var(--sage)' }}>You Offer</div>
+                <div className={styles.sideContent}>{myPost?.have_description}</div>
+              </div>
+              <div className={styles.arrow}>⇄</div>
+              <div className={styles.side}>
+                <div className={styles.sideLabel} style={{ color: 'var(--rust)' }}>They Offer</div>
+                <div className={styles.sideContent}>{theirPost?.have_description}</div>
+              </div>
+            </div>
+            <div className={styles.matchFooter}>
+              <span>with <strong>{theirPost?.profiles?.full_name}</strong></span>
+              <button className="btn btn-primary btn-sm" onClick={() => showToast('📬 Connection request sent!')}>Connect</button>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── Barter Card ──────────────────────────────────────────────────────────────
+
+function BarterCard({ post, showToast }: { post: BarterPost; showToast: AppCtx['showToast'] }) {
   return (
     <div className={styles.card}>
       <div className={styles.cardHeader}>
@@ -187,26 +237,44 @@ function BarterCard({ post, user, showToast }: any) {
   )
 }
 
-function AddBarterModal({ user, onClose, onSuccess, showToast }: any) {
-  const [loading, setLoading] = useState(false)
-  const [form, setForm] = useState({ have_description: '', have_category: 'Skills & Services', want_description: '', want_category: 'Skills & Services', notes: '' })
-  const supabase = createBrowserClient()
-  const set = (k: string) => (e: any) => setForm(f => ({ ...f, [k]: e.target.value }))
+// ─── Add Barter Modal ─────────────────────────────────────────────────────────
 
-  async function submit(e: any) {
+interface AddBarterModalProps {
+  userId: string
+  onClose: () => void
+  onSuccess: () => void
+  showToast: AppCtx['showToast']
+}
+
+function AddBarterModal({ userId, onClose, onSuccess, showToast }: AddBarterModalProps) {
+  const supabase = createBrowserClient()
+  const [loading, setLoading] = useState(false)
+  const [form, setForm] = useState({
+    have_description: '', have_category: 'Skills & Services',
+    want_description: '', want_category: 'Skills & Services', notes: '',
+  })
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    setForm(f => ({ ...f, [k]: e.target.value }))
+
+  async function submit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     try {
-      const { data, error } = await supabase.from('barter_posts').insert({ user_id: user.id, ...form }).select().single()
+      const { data, error } = await supabase.from('barter_posts').insert({ user_id: userId, ...form }).select().single()
       if (error) throw error
-      await fetch('/api/barter-match', {
+
+      // Trigger matching (fire-and-forget)
+      fetch('/api/barter-match', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId: data.id })
-      })
+        body: JSON.stringify({ postId: data.id }),
+      }).catch(() => {})
+
       onSuccess()
-    } catch (err: any) {
-      showToast(err.message, 'error')
-    } finally { setLoading(false) }
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Could not post trade', 'error')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -223,7 +291,7 @@ function AddBarterModal({ user, onClose, onSuccess, showToast }: any) {
           <div className="form-group">
             <label className="label">Category</label>
             <select className="input" value={form.have_category} onChange={set('have_category')}>
-              {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+              {BARTER_CATEGORIES.map(c => <option key={c}>{c}</option>)}
             </select>
           </div>
           <div className="form-group">
@@ -233,7 +301,7 @@ function AddBarterModal({ user, onClose, onSuccess, showToast }: any) {
           <div className="form-group">
             <label className="label">Category</label>
             <select className="input" value={form.want_category} onChange={set('want_category')}>
-              {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+              {BARTER_CATEGORIES.map(c => <option key={c}>{c}</option>)}
             </select>
           </div>
           <div className="form-group">
