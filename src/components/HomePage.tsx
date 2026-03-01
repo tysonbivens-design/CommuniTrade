@@ -1,25 +1,55 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { createBrowserClient } from '@/lib/supabase'
+import { useSupabase } from '@/lib/useSupabase'
 import ItemCard from './ItemCard'
 import styles from './HomePage.module.css'
+import type { Item, AppCtx } from '@/types'
 
-export default function HomePage({ ctx }: any) {
-  const { user, showToast, requireAuth, navigate } = ctx
-  const [recent, setRecent] = useState<any[]>([])
-  const [stats, setStats] = useState({ items: 0, members: 0, trades: 0 })
-  const supabase = createBrowserClient()
+interface HomeStats {
+  items: number
+  members: number
+  trades: number
+}
 
-  useEffect(() => { loadData() }, [])
+interface HomePageProps {
+  ctx: AppCtx
+}
 
-  async function loadData() {
-    const { data } = await supabase.from('items').select('*, profiles(full_name, trust_score, avatar_color)').eq('status', 'available').order('created_at', { ascending: false }).limit(4)
-    setRecent(data || [])
-    const { count: itemCount } = await supabase.from('items').select('*', { count: 'exact', head: true })
-    const { count: memberCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true })
-    const { count: loanCount } = await supabase.from('loans').select('*', { count: 'exact', head: true })
-    setStats({ items: itemCount || 0, members: memberCount || 0, trades: loanCount || 0 })
-  }
+export default function HomePage({ ctx }: HomePageProps) {
+  const { user, requireAuth, navigate } = ctx
+  const supabase = useSupabase()
+  const [recent, setRecent] = useState<Item[]>([])
+  const [stats, setStats] = useState<HomeStats>({ items: 0, members: 0, trades: 0 })
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadData() {
+      const [itemsResult, itemCount, memberCount, loanCount] = await Promise.all([
+        supabase
+          .from('items')
+          .select('*, profiles(full_name, trust_score, avatar_color, lat, lng)')
+          .eq('status', 'available')
+          .order('created_at', { ascending: false })
+          .limit(4),
+        supabase.from('items').select('*', { count: 'exact', head: true }),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }),
+        supabase.from('loans').select('*', { count: 'exact', head: true }),
+      ])
+
+      if (cancelled) return
+
+      if (!itemsResult.error) setRecent((itemsResult.data as Item[]) || [])
+      setStats({
+        items: itemCount.count || 0,
+        members: memberCount.count || 0,
+        trades: loanCount.count || 0,
+      })
+    }
+
+    loadData()
+    return () => { cancelled = true }
+  }, [])
 
   return (
     <div style={{ position: 'relative', zIndex: 1 }}>
@@ -46,14 +76,18 @@ export default function HomePage({ ctx }: any) {
           {recent.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}>
               <p>Nothing yet — be the first to add something!</p>
-              <button className="btn btn-primary" style={{ marginTop: '1rem' }} onClick={() => requireAuth(() => navigate('library'))}>Add the first item</button>
+              <button className="btn btn-primary" style={{ marginTop: '1rem' }} onClick={() => requireAuth(() => navigate('library'))}>
+                Add the first item
+              </button>
             </div>
           ) : (
             <div className="grid-4">
               {recent.map(item => (
-                <ItemCard key={item.id} item={item}
+                <ItemCard
+                  key={item.id}
+                  item={item}
                   onBorrow={() => requireAuth(() => navigate('library'))}
-                  onFlag={() => requireAuth(() => {})}
+                  onFlag={() => {}}
                 />
               ))}
             </div>
@@ -63,7 +97,9 @@ export default function HomePage({ ctx }: any) {
         <div className={styles.ctaBanner}>
           <h2>Got a shelf full of DVDs or books?</h2>
           <p>Snap a photo and our AI will catalog everything in seconds — then you approve what to share.</p>
-          <button className="btn btn-primary btn-lg" onClick={() => requireAuth(() => navigate('library'))}>Try AI Catalog Upload →</button>
+          <button className="btn btn-primary btn-lg" onClick={() => requireAuth(() => navigate('library'))}>
+            Try AI Catalog Upload →
+          </button>
         </div>
       </div>
     </div>
