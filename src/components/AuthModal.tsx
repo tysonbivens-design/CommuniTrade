@@ -1,23 +1,39 @@
 'use client'
 import { useState } from 'react'
-import { createBrowserClient } from '@/lib/supabase'
+import { useSupabase } from '@/lib/useSupabase'
 import styles from './Modal.module.css'
+import type { AppCtx } from '@/types'
 
-export default function AuthModal({ mode, onClose, onSuccess, showToast }: any) {
+interface AuthModalProps {
+  mode: 'login' | 'signup'
+  onClose: () => void
+  onSuccess: (msg: string) => void
+  showToast: AppCtx['showToast']
+}
+
+interface AuthForm {
+  email: string
+  password: string
+  full_name: string
+  zip_code: string
+}
+
+export default function AuthModal({ mode, onClose, onSuccess, showToast }: AuthModalProps) {
+  const supabase = useSupabase()
   const [isLogin, setIsLogin] = useState(mode === 'login')
   const [loading, setLoading] = useState(false)
-  const [form, setForm] = useState({ email: '', password: '', full_name: '', zip_code: '' })
-  const supabase = createBrowserClient()
+  const [form, setForm] = useState<AuthForm>({ email: '', password: '', full_name: '', zip_code: '' })
 
-  const set = (k: string) => (e: any) => setForm(f => ({ ...f, [k]: e.target.value }))
+  const set = (k: keyof AuthForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm(f => ({ ...f, [k]: e.target.value }))
 
-  async function handleSubmit(e: any) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     try {
       if (isLogin) {
         const { error } = await supabase.auth.signInWithPassword({
-          email: form.email, password: form.password
+          email: form.email, password: form.password,
         })
         if (error) throw error
         onSuccess('Welcome back! 👋')
@@ -25,22 +41,20 @@ export default function AuthModal({ mode, onClose, onSuccess, showToast }: any) 
         const { error } = await supabase.auth.signUp({
           email: form.email,
           password: form.password,
-          options: {
-            data: { full_name: form.full_name, zip_code: form.zip_code }
-          }
+          options: { data: { full_name: form.full_name, zip_code: form.zip_code } },
         })
         if (error) throw error
         onSuccess('Welcome to CommuniTrade! 🎉 Check your email to confirm your account.')
       }
-    } catch (err: any) {
-      showToast(err.message || 'Something went wrong', 'error')
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Something went wrong', 'error')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className={styles.overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className={styles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
       <div className={styles.modal}>
         <button className={styles.close} onClick={onClose}>✕</button>
         <h2 className={styles.title}>{isLogin ? 'Welcome back' : 'Join CommuniTrade'}</h2>
