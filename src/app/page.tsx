@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
 import Nav from '@/components/Nav'
 import HomePage from '@/components/HomePage'
@@ -14,6 +14,12 @@ import Toast from '@/components/Toast'
 
 export type Page = 'home' | 'library' | 'barter' | 'loans' | 'notifications' | 'profile' | 'admin'
 
+// ── Supabase client created ONCE at module level, never recreated ──────────
+// This is the root cause of the infinite re-render loop — if created inside
+// the component it gets a new reference on every render, causing new
+// subscriptions, which cause state updates, which cause more renders.
+const supabase = createBrowserClient()
+
 export default function App() {
   const [page, setPage]         = useState<Page>('home')
   const [user, setUser]         = useState<any>(null)
@@ -22,9 +28,8 @@ export default function App() {
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup')
   const [toast, setToast]       = useState<{ msg: string; type?: 'success' | 'error' } | null>(null)
   const [notifCount, setNotifCount] = useState(0)
-  const supabase = createBrowserClient()
 
-  // ── Auth state ────────────────────────────────────────────────────────────
+  // ── Auth state — runs once on mount ──────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
@@ -38,9 +43,9 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // ── Realtime notification badge ───────────────────────────────────────────
+  // ── Realtime notification badge — only re-subscribes when user.id changes
   useEffect(() => {
-    if (!user) return
+    if (!user?.id) return
     const channel = supabase
       .channel(`notifs-${user.id}`)
       .on('postgres_changes', {
@@ -50,7 +55,7 @@ export default function App() {
       .subscribe()
     loadNotifCount(user.id)
     return () => { supabase.removeChannel(channel) }
-  }, [user?.id]) // only user.id, not the whole user object
+  }, [user?.id])
 
   async function loadProfile(uid: string) {
     const { data } = await supabase.from('profiles').select('*').eq('id', uid).single()
@@ -76,8 +81,6 @@ export default function App() {
     else action()
   }
 
-  // Pass STABLE references — pages receive what they need without causing
-  // re-render loops. Profile is passed whole only to pages that need it.
   const ctx = { user, profile, showToast, requireAuth, navigate: setPage }
 
   return (
