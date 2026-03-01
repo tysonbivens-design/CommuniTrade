@@ -94,9 +94,11 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
     fetch('/api/notify', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'loan_approved', item: req.items,
-        borrowerEmail: req.profiles?.email, borrowerName: req.profiles?.full_name,
-        lenderName: user?.email, dueDate: dueAt.toLocaleDateString(),
+        type: 'loan_approved',
+        item: req.items,
+        borrowerId: req.requester_id,
+        lenderId: userId,
+        dueDate: dueAt.toLocaleDateString(),
       }),
     }).catch(() => {})
 
