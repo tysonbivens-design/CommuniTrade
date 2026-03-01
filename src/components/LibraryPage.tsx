@@ -1,11 +1,10 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
 import ItemCard from './ItemCard'
 import styles from './LibraryPage.module.css'
 import modalStyles from './Modal.module.css'
 
-const CATEGORIES = ['', 'Book', 'DVD', 'VHS', 'CD', 'Game', 'Tool', 'Home Good', 'Other']
 const CAT_LABELS: Record<string, string> = {
   '': 'All Items', Book: '📚 Books', DVD: '🎬 DVDs', VHS: '📼 VHS',
   CD: '🎵 CDs', Game: '🎲 Games', Tool: '🔧 Tools', 'Home Good': '🏠 Home Goods'
@@ -22,7 +21,6 @@ function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): 
 
 export default function LibraryPage({ ctx }: any) {
   const { user, profile, showToast, requireAuth } = ctx
-
   const [items, setItems]           = useState<any[]>([])
   const [loading, setLoading]       = useState(true)
   const [search, setSearch]         = useState('')
@@ -31,50 +29,64 @@ export default function LibraryPage({ ctx }: any) {
   const [borrowItem, setBorrowItem] = useState<any>(null)
   const [flagItem, setFlagItem]     = useState<any>(null)
   const [showAI, setShowAI]         = useState(false)
-  const supabase = createBrowserClient()
+  const [loadTick, setLoadTick]     = useState(0) // increment to manually trigger reload
 
-  // Extract PRIMITIVES only — avoids re-render loops from object reference changes
-  const userId      = user?.id ?? null
-  const userLat     = profile?.lat ?? null
-  const userLng     = profile?.lng ?? null
-  const radiusMiles = profile?.radius_miles ?? null
+  // Stable Supabase client — created once, never recreated
+  const sb = useRef(createBrowserClient()).current
 
-  const loadItems = useCallback(async () => {
-    setLoading(true)
-    try {
-      let q = supabase
-        .from('items')
-        .select('*, profiles(full_name, trust_score, avatar_color, lat, lng)')
-        .eq('flagged', false)
-        .eq('status', 'available')
-        .order('created_at', { ascending: false })
-      if (category) q = q.eq('category', category)
-      if (search)   q = q.ilike('title', `%${search}%`)
+  useEffect(() => {
+    let cancelled = false
 
-      const { data, error } = await q
-      if (error) throw error
+    async function load() {
+      setLoading(true)
+      try {
+        let q = sb
+          .from('items')
+          .select('*, profiles(full_name, trust_score, avatar_color, lat, lng)')
+          .eq('flagged', false)
+          .eq('status', 'available')
+          .order('created_at', { ascending: false })
 
-      let results = data || []
-      if (userId && userLat && userLng && radiusMiles) {
-        results = results.filter(item => {
-          if (item.user_id === userId) return true
-          if (!item.profiles?.lat || !item.profiles?.lng) return true
-          return distanceMiles(userLat, userLng, item.profiles.lat, item.profiles.lng) <= radiusMiles
-        })
+        if (category) q = q.eq('category', category)
+        if (search)   q = q.ilike('title', `%${search}%`)
+
+        const { data, error } = await q
+        if (cancelled) return
+        if (error) throw error
+
+        let results = data || []
+
+        // Apply distance filter using current profile values
+        const uid    = user?.id
+        const lat    = profile?.lat
+        const lng    = profile?.lng
+        const radius = profile?.radius_miles
+        if (uid && lat && lng && radius) {
+          results = results.filter(item => {
+            if (item.user_id === uid) return true
+            if (!item.profiles?.lat || !item.profiles?.lng) return true
+            return distanceMiles(lat, lng, item.profiles.lat, item.profiles.lng) <= radius
+          })
+        }
+
+        setItems(results)
+      } catch (err: any) {
+        console.error('Library load error:', err.message)
+        if (!cancelled) setItems([])
+      } finally {
+        if (!cancelled) setLoading(false)
       }
-      setItems(results)
-    } catch (err: any) {
-      console.error('Library load error:', err)
-      setItems([])
-    } finally {
-      setLoading(false)
     }
-  }, [category, search, userId, userLat, userLng, radiusMiles])
 
-  useEffect(() => { loadItems() }, [loadItems])
+    load()
+    return () => { cancelled = true }
+  }, [category, search, loadTick]) // only reruns on search/category/manual reload
 
-  const radiusNote = userId && radiusMiles
-    ? `Showing items within ${radiusMiles} miles of you`
+  // Call this after any mutation (add, borrow, flag) to refresh the list
+  function reload() { setLoadTick(t => t + 1) }
+
+  const radiusNote = user?.id && profile?.radius_miles
+    ? `Showing items within ${profile.radius_miles} miles of you`
     : 'Browse, borrow, and lend with your neighbors'
 
   return (
@@ -87,33 +99,51 @@ export default function LibraryPage({ ctx }: any) {
           <div className={styles.searchRow}>
             <div className={styles.searchWrap}>
               <span className={styles.searchIcon}>🔍</span>
-              <input className={`input ${styles.searchInput}`} placeholder="Search titles, authors…"
-                value={search} onChange={e => setSearch(e.target.value)} />
+              <input
+                className={`input ${styles.searchInput}`}
+                placeholder="Search titles, authors…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
             </div>
-            <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>+ Add Item</button>
+            <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>
+              + Add Item
+            </button>
           </div>
 
           <div className="tabs">
             {Object.entries(CAT_LABELS).map(([val, label]) => (
-              <button key={val} className={`tab ${category === val ? 'active' : ''}`} onClick={() => setCategory(val)}>{label}</button>
+              <button key={val} className={`tab ${category === val ? 'active' : ''}`} onClick={() => setCategory(val)}>
+                {label}
+              </button>
             ))}
           </div>
 
           {loading ? (
-            <div className={styles.loadingGrid}>{[...Array(8)].map((_, i) => <div key={i} className={styles.skeleton} />)}</div>
+            <div className={styles.loadingGrid}>
+              {[...Array(8)].map((_, i) => <div key={i} className={styles.skeleton} />)}
+            </div>
           ) : items.length === 0 ? (
             <div className={styles.empty}>
               <div className={styles.emptyIcon}>📚</div>
               <h3>Nothing here yet</h3>
-              <p>{userId && radiusMiles ? `No items within ${radiusMiles} miles. Try increasing your radius via the 📍 pill in the nav.` : 'Be the first to add something!'}</p>
-              <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>Add the first item</button>
+              <p>
+                {user?.id && profile?.radius_miles
+                  ? `No items within ${profile.radius_miles} miles. Try increasing your radius via the 📍 pill in the nav.`
+                  : 'Be the first to add something to your community!'
+                }
+              </p>
+              <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>
+                Add the first item
+              </button>
             </div>
           ) : (
             <div className="grid-4">
               {items.map(item => (
-                <ItemCard key={item.id} item={item}
+                <ItemCard
+                  key={item.id} item={item}
                   onBorrow={(i: any) => requireAuth(() => setBorrowItem(i))}
-                  onFlag={(i: any) => requireAuth(() => setFlagItem(i))}
+                  onFlag={(i: any)   => requireAuth(() => setFlagItem(i))}
                 />
               ))}
             </div>
@@ -122,29 +152,50 @@ export default function LibraryPage({ ctx }: any) {
           <div className={styles.aiSection}>
             <h2 className="section-title">📸 AI Catalog Upload</h2>
             <p className="section-subtitle">Snap a photo of your shelf and Claude will extract everything automatically</p>
-            <button className="btn btn-primary btn-lg" onClick={() => requireAuth(() => setShowAI(true))}>Try AI Catalog Upload →</button>
+            <button className="btn btn-primary btn-lg" onClick={() => requireAuth(() => setShowAI(true))}>
+              Try AI Catalog Upload →
+            </button>
           </div>
         </div>
       </div>
 
-      {showAdd    && <AddItemModal  user={user} onClose={() => setShowAdd(false)}    onSuccess={() => { setShowAdd(false);    loadItems(); showToast('Item added! 🎉') }} showToast={showToast} />}
-      {borrowItem && <BorrowModal   item={borrowItem} user={user} onClose={() => setBorrowItem(null)} onSuccess={() => { setBorrowItem(null); loadItems(); showToast('Borrow request sent! 📬') }} showToast={showToast} />}
-      {flagItem   && <FlagModal     item={flagItem}   user={user} onClose={() => setFlagItem(null)}   onSuccess={() => { setFlagItem(null); showToast("Thanks for the report. We'll review it.") }} showToast={showToast} />}
-      {showAI     && <AIUploadModal user={user} onClose={() => setShowAI(false)} onSuccess={(c: number) => { setShowAI(false); loadItems(); showToast(`${c} items added! 🎉`) }} showToast={showToast} />}
+      {showAdd && (
+        <AddItemModal user={user} sb={sb}
+          onClose={() => setShowAdd(false)}
+          onSuccess={() => { setShowAdd(false); reload(); showToast('Item added! 🎉') }}
+          showToast={showToast} />
+      )}
+      {borrowItem && (
+        <BorrowModal item={borrowItem} user={user} sb={sb}
+          onClose={() => setBorrowItem(null)}
+          onSuccess={() => { setBorrowItem(null); reload(); showToast('Borrow request sent! 📬') }}
+          showToast={showToast} />
+      )}
+      {flagItem && (
+        <FlagModal item={flagItem} user={user} sb={sb}
+          onClose={() => setFlagItem(null)}
+          onSuccess={() => { setFlagItem(null); showToast("Thanks for the report. We'll review it.") }}
+          showToast={showToast} />
+      )}
+      {showAI && (
+        <AIUploadModal user={user} sb={sb}
+          onClose={() => setShowAI(false)}
+          onSuccess={(c: number) => { setShowAI(false); reload(); showToast(`${c} items added! 🎉`) }}
+          showToast={showToast} />
+      )}
     </div>
   )
 }
 
-function AddItemModal({ user, onClose, onSuccess, showToast }: any) {
+function AddItemModal({ user, sb, onClose, onSuccess, showToast }: any) {
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({ title: '', author_creator: '', category: 'Book', offer_type: 'lend', condition: 'good', notes: '', duration_days: 14 })
-  const supabase = createBrowserClient()
   const set = (k: string) => (e: any) => setForm(f => ({ ...f, [k]: e.target.value }))
 
   async function submit(e: any) {
     e.preventDefault(); setLoading(true)
     try {
-      let metadata = {}, cover_image_url = null
+      let metadata: any = {}, cover_image_url = null
       if (form.category === 'Book' && form.title) {
         try {
           const res = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(form.title)}&limit=1`)
@@ -156,7 +207,7 @@ function AddItemModal({ user, onClose, onSuccess, showToast }: any) {
           }
         } catch {}
       }
-      const { error } = await supabase.from('items').insert({
+      const { error } = await sb.from('items').insert({
         user_id: user.id, title: form.title, author_creator: form.author_creator || null,
         category: form.category, offer_type: form.offer_type, condition: form.condition,
         notes: form.notes || null, metadata, cover_image_url, status: 'available'
@@ -217,26 +268,23 @@ function AddItemModal({ user, onClose, onSuccess, showToast }: any) {
   )
 }
 
-function BorrowModal({ item, user, onClose, onSuccess, showToast }: any) {
+function BorrowModal({ item, user, sb, onClose, onSuccess, showToast }: any) {
   const [loading, setLoading] = useState(false)
   const [duration, setDuration] = useState(14)
   const [message, setMessage] = useState('')
-  const supabase = createBrowserClient()
 
   async function submit(e: any) {
     e.preventDefault(); setLoading(true)
     try {
-      const { error } = await supabase.from('loan_requests').insert({
+      const { error } = await sb.from('loan_requests').insert({
         item_id: item.id, requester_id: user.id, duration_days: duration, message, status: 'pending'
       })
       if (error) throw error
-      await supabase.from('notifications').insert({
+      await sb.from('notifications').insert({
         user_id: item.user_id, type: 'loan_request', title: 'New Borrow Request',
         body: `Someone wants to borrow your "${item.title}" for ${duration} days.`,
         data: { item_id: item.id, requester_id: user.id }
       })
-      await fetch('/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'loan_request', item, duration, lenderId: item.user_id }) })
       onSuccess()
     } catch (err: any) { showToast(err.message, 'error') }
     finally { setLoading(false) }
@@ -266,16 +314,15 @@ function BorrowModal({ item, user, onClose, onSuccess, showToast }: any) {
   )
 }
 
-function FlagModal({ item, user, onClose, onSuccess, showToast }: any) {
+function FlagModal({ item, user, sb, onClose, onSuccess, showToast }: any) {
   const [reason, setReason] = useState('unavailable')
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
-  const supabase = createBrowserClient()
 
   async function submit(e: any) {
     e.preventDefault(); setLoading(true)
     try {
-      const { error } = await supabase.from('item_flags').insert({ item_id: item.id, user_id: user.id, reason, notes })
+      const { error } = await sb.from('item_flags').insert({ item_id: item.id, user_id: user.id, reason, notes })
       if (error) throw error
       onSuccess()
     } catch (err: any) { showToast(err.message, 'error') }
@@ -309,20 +356,18 @@ function FlagModal({ item, user, onClose, onSuccess, showToast }: any) {
   )
 }
 
-function AIUploadModal({ user, onClose, onSuccess, showToast }: any) {
+function AIUploadModal({ user, sb, onClose, onSuccess, showToast }: any) {
   const [stage, setStage] = useState<'upload' | 'processing' | 'review'>('upload')
   const [extracted, setExtracted] = useState<any[]>([])
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [loading, setLoading] = useState(false)
-  const supabase = createBrowserClient()
 
   async function handleFile(e: any) {
     const file = e.target.files?.[0]; if (!file) return
     setStage('processing')
     try {
       const base64 = await fileToBase64(file)
-      const res = await fetch('/api/ai-catalog', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64, mediaType: file.type }) })
+      const res = await fetch('/api/ai-catalog', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: base64, mediaType: file.type }) })
       const data = await res.json()
       if (data.items) { setExtracted(data.items); setSelected(new Set(data.items.map((_: any, i: number) => i))); setStage('review') }
       else throw new Error('Could not extract items')
@@ -342,7 +387,7 @@ function AIUploadModal({ user, onClose, onSuccess, showToast }: any) {
             if (data.docs?.[0]?.cover_i) cover_image_url = `https://covers.openlibrary.org/b/id/${data.docs[0].cover_i}-M.jpg`
           } catch {}
         }
-        await supabase.from('items').insert({ user_id: user.id, ...item, status: 'available', offer_type: 'lend', cover_image_url })
+        await sb.from('items').insert({ user_id: user.id, ...item, status: 'available', offer_type: 'lend', cover_image_url })
       }
       onSuccess(toAdd.length)
     } catch (err: any) { showToast(err.message, 'error') }
