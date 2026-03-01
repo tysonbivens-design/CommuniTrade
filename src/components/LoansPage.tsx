@@ -113,16 +113,32 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
 
   async function confirmReturn(loan: Loan) {
     if (!userId) return
-    const field = loan.lender_id === userId ? 'lender_confirmed_return' : 'borrower_confirmed_return'
-    const { error } = await supabase.from('loans').update({ [field]: true }).eq('id', loan.id)
+
+    // Self-loans (lender = borrower) need both fields set at once
+    const isSelfLoan = loan.lender_id === loan.borrower_id
+    const update = isSelfLoan
+      ? { lender_confirmed_return: true, borrower_confirmed_return: true }
+      : loan.lender_id === userId
+        ? { lender_confirmed_return: true }
+        : { borrower_confirmed_return: true }
+
+    const { error } = await supabase.from('loans').update(update).eq('id', loan.id)
     if (error) { showToast(error.message, 'error'); return }
 
-    const updated = { ...loan, [field]: true }
+    const updated = { ...loan, ...update }
     if (updated.lender_confirmed_return && updated.borrower_confirmed_return) {
-      await Promise.all([
-        supabase.from('loans').update({ status: 'returned', returned_at: new Date().toISOString() }).eq('id', loan.id),
-        supabase.from('items').update({ status: 'available' }).eq('id', loan.item_id),
-      ])
+      const { error: loanErr } = await supabase
+        .from('loans')
+        .update({ status: 'returned', returned_at: new Date().toISOString() })
+        .eq('id', loan.id)
+      if (loanErr) { showToast(loanErr.message, 'error'); return }
+
+      const { error: itemErr } = await supabase
+        .from('items')
+        .update({ status: 'available' })
+        .eq('id', loan.item_id)
+      if (itemErr) { showToast(itemErr.message, 'error'); return }
+
       showToast('Return confirmed! Item is available again ✅')
       setReviewLoan(loan)
       setLent(l => l.filter(x => x.id !== loan.id))
