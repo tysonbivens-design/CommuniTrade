@@ -168,8 +168,8 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
                 <ItemCard
                   key={item.id}
                   item={item}
-                  onBorrow={i => requireAuth(() => setBorrowItem(i))}
-                  onFlag={i => requireAuth(() => setFlagItem(i))}
+                  onBorrow={(i: Item) => requireAuth(() => setBorrowItem(i))}
+                  onFlag={(i: Item) => requireAuth(() => setFlagItem(i))}
                 />
               ))}
             </div>
