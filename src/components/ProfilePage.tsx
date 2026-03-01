@@ -1,39 +1,95 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { createBrowserClient } from '@/lib/supabase'
+import { useSupabase } from '@/lib/useSupabase'
 import ItemCard from './ItemCard'
 import styles from './ProfilePage.module.css'
+import type { Item, AppCtx } from '@/types'
 
-const COLORS = ['#C4622D','#5A7A5C','#D4A843','#6B4C3B','#8B5CF6','#059669','#0EA5E9','#EC4899']
+const COLORS = ['#C4622D', '#5A7A5C', '#D4A843', '#6B4C3B', '#8B5CF6', '#059669', '#0EA5E9', '#EC4899']
 
-export default function ProfilePage({ ctx }: any) {
-  const { user, profile, showToast, requireAuth } = ctx
-  const [tab, setTab] = useState('inventory')
-  const [items, setItems] = useState<any[]>([])
-  const [reviews, setReviews] = useState<any[]>([])
-  const [stats, setStats] = useState({ shared: 0, loans: 0, trades: 0 })
+interface Review {
+  id: string
+  rating: number
+  comment: string | null
+  created_at: string
+  reviewer: { full_name: string | null; avatar_color: string | null } | null
+}
+
+interface ProfileStats {
+  shared: number
+  loans: number
+  trades: number
+}
+
+interface ProfilePageProps {
+  ctx: AppCtx
+  onProfileUpdate: (uid: string) => void
+}
+
+export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) {
+  const { user, profile, showToast } = ctx
+  const supabase = useSupabase()
+  const [tab, setTab] = useState<'inventory' | 'reviews'>('inventory')
+  const [items, setItems] = useState<Item[]>([])
+  const [reviews, setReviews] = useState<Review[]>([])
+  const [stats, setStats] = useState<ProfileStats>({ shared: 0, loans: 0, trades: 0 })
   const [editColor, setEditColor] = useState(false)
-  const supabase = createBrowserClient()
 
-  useEffect(() => { if (user) loadAll() }, [user])
+  const userId = user?.id ?? null
 
-  async function loadAll() {
-    const { data: myItems } = await supabase.from('items').select('*, profiles(full_name, trust_score, avatar_color)').eq('user_id', user.id).order('created_at', { ascending: false })
-    setItems(myItems || [])
-    const { data: myReviews } = await supabase.from('reviews').select('*, reviewer:profiles!reviews_reviewer_id_fkey(full_name, avatar_color)').eq('reviewee_id', user.id).order('created_at', { ascending: false })
-    setReviews(myReviews || [])
-    const { count: loansCount } = await supabase.from('loans').select('*', { count: 'exact', head: true }).eq('lender_id', user.id).eq('status', 'returned')
-    setStats({ shared: myItems?.length || 0, loans: loansCount || 0, trades: 0 })
+  useEffect(() => {
+    if (!userId) return
+    loadAll(userId)
+  }, [userId])
+
+  async function loadAll(uid: string) {
+    const [itemsResult, reviewsResult, loansResult] = await Promise.all([
+      supabase
+        .from('items')
+        .select('*, profiles(full_name, trust_score, avatar_color, lat, lng)')
+        .eq('user_id', uid)
+        .order('created_at', { ascending: false }),
+
+      supabase
+        .from('reviews')
+        .select('*, reviewer:profiles!reviews_reviewer_id_fkey(full_name, avatar_color)')
+        .eq('reviewee_id', uid)
+        .order('created_at', { ascending: false }),
+
+      supabase
+        .from('loans')
+        .select('*', { count: 'exact', head: true })
+        .eq('lender_id', uid)
+        .eq('status', 'returned'),
+    ])
+
+    if (!itemsResult.error) setItems((itemsResult.data as Item[]) || [])
+    if (!reviewsResult.error) setReviews((reviewsResult.data as Review[]) || [])
+    setStats({
+      shared: itemsResult.data?.length || 0,
+      loans: loansResult.count || 0,
+      trades: 0,
+    })
   }
 
   async function updateColor(color: string) {
-    await supabase.from('profiles').update({ avatar_color: color }).eq('id', user.id)
+    if (!userId) return
+    const { error } = await supabase.from('profiles').update({ avatar_color: color }).eq('id', userId)
+    if (error) { showToast(error.message, 'error'); return }
     setEditColor(false)
     showToast('Profile updated!')
-    window.location.reload()
+    onProfileUpdate(userId)
   }
 
-  if (!user) return <div className="container"><div className="section" style={{ textAlign: 'center', padding: '5rem' }}><h2>Sign in to view your profile</h2></div></div>
+  if (!userId) {
+    return (
+      <div className="container">
+        <div className="section" style={{ textAlign: 'center', padding: '5rem' }}>
+          <h2>Sign in to view your profile</h2>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ position: 'relative', zIndex: 1 }}>
@@ -55,7 +111,9 @@ export default function ProfilePage({ ctx }: any) {
             </div>
             <div>
               <h1 className={styles.name}>{profile?.full_name || 'Community Member'}</h1>
-              <p className={styles.meta}>📍 Zip {profile?.zip_code} · Member since {new Date(profile?.created_at || Date.now()).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
+              <p className={styles.meta}>
+                📍 Zip {profile?.zip_code} · Member since {new Date(profile?.created_at || Date.now()).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              </p>
               <div className={styles.trustRing}>⭐ {profile?.trust_score?.toFixed(1) || '5.0'} Trust Score · {profile?.review_count || 0} reviews</div>
             </div>
             <div className={styles.profileStats}>
@@ -70,8 +128,12 @@ export default function ProfilePage({ ctx }: any) {
       <div className="container">
         <div className="section">
           <div className="tabs">
-            <button className={`tab ${tab === 'inventory' ? 'active' : ''}`} onClick={() => setTab('inventory')}>My Inventory ({items.length})</button>
-            <button className={`tab ${tab === 'reviews' ? 'active' : ''}`} onClick={() => setTab('reviews')}>Reviews ({reviews.length})</button>
+            <button className={`tab ${tab === 'inventory' ? 'active' : ''}`} onClick={() => setTab('inventory')}>
+              My Inventory ({items.length})
+            </button>
+            <button className={`tab ${tab === 'reviews' ? 'active' : ''}`} onClick={() => setTab('reviews')}>
+              Reviews ({reviews.length})
+            </button>
           </div>
 
           {tab === 'inventory' && (
@@ -82,7 +144,9 @@ export default function ProfilePage({ ctx }: any) {
               </div>
             ) : (
               <div className="grid-4">
-                {items.map(item => <ItemCard key={item.id} item={item} onBorrow={() => {}} onFlag={() => {}} />)}
+                {items.map(item => (
+                  <ItemCard key={item.id} item={item} onBorrow={() => {}} onFlag={() => {}} />
+                ))}
               </div>
             )
           )}
@@ -98,7 +162,9 @@ export default function ProfilePage({ ctx }: any) {
                 {reviews.map(r => (
                   <div key={r.id} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '1rem 1.25rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                      <span className="avatar" style={{ background: r.reviewer?.avatar_color || '#C4622D', width: 28, height: 28, fontSize: '0.72rem' }}>{r.reviewer?.full_name?.[0]}</span>
+                      <span className="avatar" style={{ background: r.reviewer?.avatar_color || '#C4622D', width: 28, height: 28, fontSize: '0.72rem' }}>
+                        {r.reviewer?.full_name?.[0]}
+                      </span>
                       <strong style={{ fontSize: '0.9rem' }}>{r.reviewer?.full_name}</strong>
                       <span>{'⭐'.repeat(r.rating)}</span>
                       <span style={{ fontSize: '0.78rem', color: 'var(--muted)', marginLeft: 'auto' }}>{new Date(r.created_at).toLocaleDateString()}</span>
