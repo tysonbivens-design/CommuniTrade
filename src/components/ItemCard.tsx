@@ -1,12 +1,19 @@
 'use client'
 import styles from './ItemCard.module.css'
+import type { Item, AppCtx } from '@/types'
 
 const EMOJIS: Record<string, string> = {
   Book: '📚', DVD: '🎬', VHS: '📼', CD: '🎵',
-  Game: '🎲', Tool: '🔧', 'Home Good': '🏠', Other: '📦'
+  Game: '🎲', Tool: '🔧', 'Home Good': '🏠', Other: '📦',
 }
 
-export default function ItemCard({ item, onBorrow, onFlag }: any) {
+interface ItemCardProps {
+  item: Item
+  onBorrow: (item: Item) => void
+  onFlag: (item: Item) => void
+}
+
+export default function ItemCard({ item, onBorrow, onFlag }: ItemCardProps) {
   const emoji = EMOJIS[item.category] || '📦'
   const isAvailable = item.status === 'available'
 
@@ -28,7 +35,7 @@ export default function ItemCard({ item, onBorrow, onFlag }: any) {
         {item.metadata?.year && <p className={styles.sub}>{item.metadata.year} · {item.metadata.genre || ''}</p>}
         <div className={styles.footer}>
           <div className={styles.user}>
-            <span className="avatar" style={{ background: item.profiles?.avatar_color || '#C4622D', width:22, height:22, fontSize:'0.65rem' }}>
+            <span className="avatar" style={{ background: item.profiles?.avatar_color || '#C4622D', width: 22, height: 22, fontSize: '0.65rem' }}>
               {item.profiles?.full_name?.[0] || '?'}
             </span>
             <span>{item.profiles?.full_name?.split(' ')[0] || 'Neighbor'}</span>
