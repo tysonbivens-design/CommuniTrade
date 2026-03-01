@@ -378,7 +378,7 @@ function BorrowModal({ item, userId, onClose, onSuccess, showToast }: BorrowModa
       fetch('/api/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'loan_request', item, duration, lenderId: item.user_id }),
+        body: JSON.stringify({ type: 'loan_request', item, duration, lenderId: item.user_id, requesterId: userId }),
       }).catch(() => { /* email failure shouldn't break the flow */ })
 
       onSuccess()
