@@ -3,9 +3,9 @@ import { useState, useEffect } from 'react'
 import { useSupabase } from '@/lib/useSupabase'
 import type { Item, ItemFlag, AppCtx } from '@/types'
 
-interface FlaggedItem extends Item {
+interface FlaggedItem extends Omit<Item, 'profiles'> {
   item_flags: ItemFlag[]
-  profiles: { full_name: string | null; email: string | null }
+  profiles: { full_name: string | null; email: string | null; trust_score: number; avatar_color: string | null; lat: number | null; lng: number | null }
 }
 
 interface AdminPageProps {
