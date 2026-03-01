@@ -1,243 +1,216 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
-import styles from './LoansPage.module.css'
+import ItemCard from './ItemCard'
+import styles from './LibraryPage.module.css'
 import modalStyles from './Modal.module.css'
 
-// Stable client — created once at module level
-const sb = createBrowserClient()
+const CAT_LABELS: Record<string, string> = {
+  '': 'All Items', Book: '📚 Books', DVD: '🎬 DVDs', VHS: '📼 VHS',
+  CD: '🎵 CDs', Game: '🎲 Games', Tool: '🔧 Tools', 'Home Good': '🏠 Home Goods'
+}
 
-export default function LoansPage({ ctx }: any) {
-  const { user, showToast } = ctx
-  const [tab, setTab]           = useState<'lent' | 'borrowed' | 'requests'>('requests')
-  const [requests, setRequests] = useState<any[]>([])
-  const [lent, setLent]         = useState<any[]>([])
-  const [borrowed, setBorrowed] = useState<any[]>([])
-  const [loading, setLoading]   = useState(true)
-  const [reviewLoan, setReviewLoan] = useState<any>(null)
+function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 3958.8
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+export default function LibraryPage({ ctx }: any) {
+  const { user, profile, showToast, requireAuth } = ctx
+  const [items, setItems]           = useState<any[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [search, setSearch]         = useState('')
+  const [category, setCategory]     = useState('')
+  const [showAdd, setShowAdd]       = useState(false)
+  const [borrowItem, setBorrowItem] = useState<any>(null)
+  const [flagItem, setFlagItem]     = useState<any>(null)
+  const [showAI, setShowAI]         = useState(false)
+  const [loadTick, setLoadTick]     = useState(0) // increment to manually trigger reload
+
+  // Stable Supabase client — created once, never recreated
+  const sb = useRef(createBrowserClient()).current
 
   useEffect(() => {
-    if (user?.id) loadAll()
-  }, [user?.id])
+    let cancelled = false
 
-  async function loadAll() {
-    setLoading(true)
-    try {
-      const { data: allReqs } = await sb
-        .from('loan_requests')
-        .select('*, items(id, title, category, user_id), profiles:requester_id(full_name, trust_score, avatar_color)')
-        .eq('status', 'pending')
-      setRequests((allReqs || []).filter(r => r.items?.user_id === user.id))
+    async function load() {
+      setLoading(true)
+      try {
+        let q = sb
+          .from('items')
+          .select('*, profiles(full_name, trust_score, avatar_color, lat, lng)')
+          .eq('flagged', false)
+          .eq('status', 'available')
+          .order('created_at', { ascending: false })
 
-      const { data: lentData } = await sb
-        .from('loans')
-        .select('*, items(title, category), borrower:profiles!loans_borrower_id_fkey(full_name, avatar_color)')
-        .eq('lender_id', user.id)
-        .in('status', ['active', 'overdue'])
-      setLent(lentData || [])
+        if (category) q = q.eq('category', category)
+        if (search)   q = q.ilike('title', `%${search}%`)
 
-      const { data: borrowedData } = await sb
-        .from('loans')
-        .select('*, items(title, category), lender:profiles!loans_lender_id_fkey(full_name, avatar_color)')
-        .eq('borrower_id', user.id)
-        .in('status', ['active', 'overdue'])
-      setBorrowed(borrowedData || [])
-    } catch (err: any) {
-      console.error('Loans load error:', err.message)
-    } finally {
-      setLoading(false)
+        const { data, error } = await q
+        if (cancelled) return
+        if (error) throw error
+
+        let results = data || []
+
+        // Apply distance filter using current profile values
+        const uid    = user?.id
+        const lat    = profile?.lat
+        const lng    = profile?.lng
+        const radius = profile?.radius_miles
+        if (uid && lat && lng && radius) {
+          results = results.filter(item => {
+            if (item.user_id === uid) return true
+            if (!item.profiles?.lat || !item.profiles?.lng) return true
+            return distanceMiles(lat, lng, item.profiles.lat, item.profiles.lng) <= radius
+          })
+        }
+
+        setItems(results)
+      } catch (err: any) {
+        console.error('Library load error:', err.message)
+        if (!cancelled) setItems([])
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
     }
-  }
 
-  async function approveRequest(req: any) {
-    const dueAt = new Date()
-    dueAt.setDate(dueAt.getDate() + req.duration_days)
-    const { error } = await sb.from('loans').insert({
-      item_id: req.item_id, lender_id: user.id, borrower_id: req.requester_id,
-      request_id: req.id, duration_days: req.duration_days,
-      due_at: dueAt.toISOString(), status: 'active'
-    })
-    if (error) return showToast(error.message, 'error')
-    await sb.from('loan_requests').update({ status: 'approved' }).eq('id', req.id)
-    await sb.from('items').update({ status: 'loaned' }).eq('id', req.item_id)
-    await sb.from('notifications').insert({
-      user_id: req.requester_id, type: 'loan_approved',
-      title: 'Borrow Request Approved! ✅',
-      body: `Your request to borrow "${req.items.title}" was approved. Due back in ${req.duration_days} days.`
-    })
-    showToast('Request approved! ✅')
-    loadAll()
-  }
+    load()
+    return () => { cancelled = true }
+  }, [category, search, loadTick]) // only reruns on search/category/manual reload
 
-  async function declineRequest(req: any) {
-    await sb.from('loan_requests').update({ status: 'declined' }).eq('id', req.id)
-    showToast('Request declined')
-    loadAll()
-  }
+  // Call this after any mutation (add, borrow, flag) to refresh the list
+  function reload() { setLoadTick(t => t + 1) }
 
-  async function confirmReturn(loan: any) {
-    const field = loan.lender_id === user.id ? 'lender_confirmed_return' : 'borrower_confirmed_return'
-    await sb.from('loans').update({ [field]: true }).eq('id', loan.id)
-    const updated = { ...loan, [field]: true }
-    if (updated.lender_confirmed_return && updated.borrower_confirmed_return) {
-      await sb.from('loans').update({ status: 'returned', returned_at: new Date().toISOString() }).eq('id', loan.id)
-      await sb.from('items').update({ status: 'available' }).eq('id', loan.item_id)
-      showToast('Return confirmed! Item is available again ✅')
-      setReviewLoan(loan)
-    } else {
-      showToast('Confirmed on your end — waiting for the other party to confirm too')
-    }
-    loadAll()
-  }
-
-  function formatDate(d: string) {
-    return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  }
-  function isOverdue(dueAt: string) { return new Date(dueAt) < new Date() }
-
-  if (!user) return (
-    <div className="container">
-      <div className="section" style={{ textAlign: 'center', padding: '5rem' }}>
-        <h2>Sign in to view your loans</h2>
-      </div>
-    </div>
-  )
+  const radiusNote = user?.id && profile?.radius_miles
+    ? `Showing items within ${profile.radius_miles} miles of you`
+    : 'Browse, borrow, and lend with your neighbors'
 
   return (
     <div style={{ position: 'relative', zIndex: 1 }}>
       <div className="container">
         <div className="section">
-          <h1 className="section-title">My Loans</h1>
-          <p className="section-subtitle">Track everything you've lent and borrowed</p>
+          <h1 className="section-title">Community Library</h1>
+          <p className="section-subtitle">{radiusNote}</p>
 
-          <div className="tabs">
-            <button className={`tab ${tab === 'requests' ? 'active' : ''}`} onClick={() => setTab('requests')}>
-              Pending Requests
-              {requests.length > 0 && <span style={{ background: 'var(--rust)', color: '#fff', borderRadius: 10, padding: '0.05rem 0.4rem', fontSize: '0.72rem', marginLeft: '0.3rem' }}>{requests.length}</span>}
-            </button>
-            <button className={`tab ${tab === 'lent' ? 'active' : ''}`} onClick={() => setTab('lent')}>
-              Items I've Lent ({lent.length})
-            </button>
-            <button className={`tab ${tab === 'borrowed' ? 'active' : ''}`} onClick={() => setTab('borrowed')}>
-              Items I've Borrowed ({borrowed.length})
+          <div className={styles.searchRow}>
+            <div className={styles.searchWrap}>
+              <span className={styles.searchIcon}>🔍</span>
+              <input
+                className={`input ${styles.searchInput}`}
+                placeholder="Search titles, authors…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+            </div>
+            <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>
+              + Add Item
             </button>
           </div>
 
+          <div className="tabs">
+            {Object.entries(CAT_LABELS).map(([val, label]) => (
+              <button key={val} className={`tab ${category === val ? 'active' : ''}`} onClick={() => setCategory(val)}>
+                {label}
+              </button>
+            ))}
+          </div>
+
           {loading ? (
-            <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>
-              <div style={{ fontSize: '2rem', marginBottom: '0.75rem' }}>⏳</div>
-              <p>Loading your loans…</p>
+            <div className={styles.loadingGrid}>
+              {[...Array(8)].map((_, i) => <div key={i} className={styles.skeleton} />)}
+            </div>
+          ) : items.length === 0 ? (
+            <div className={styles.empty}>
+              <div className={styles.emptyIcon}>📚</div>
+              <h3>Nothing here yet</h3>
+              <p>
+                {user?.id && profile?.radius_miles
+                  ? `No items within ${profile.radius_miles} miles. Try increasing your radius via the 📍 pill in the nav.`
+                  : 'Be the first to add something to your community!'
+                }
+              </p>
+              <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>
+                Add the first item
+              </button>
             </div>
           ) : (
-            <>
-              {tab === 'requests' && (
-                requests.length === 0
-                  ? <EmptyState icon="📬" text="No pending borrow requests" />
-                  : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                      {requests.map(req => (
-                        <div key={req.id} className={styles.requestCard}>
-                          <div className={styles.requestInfo}>
-                            <span className="avatar" style={{ background: req.profiles?.avatar_color || '#C4622D', width: 36, height: 36 }}>
-                              {req.profiles?.full_name?.[0]}
-                            </span>
-                            <div>
-                              <p><strong>{req.profiles?.full_name}</strong> wants to borrow <strong>{req.items?.title}</strong></p>
-                              <p style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>For {req.duration_days} days · Trust ⭐{req.profiles?.trust_score?.toFixed(1)}</p>
-                              {req.message && <p style={{ fontSize: '0.82rem', color: 'var(--muted)', fontStyle: 'italic', marginTop: '0.25rem' }}>"{req.message}"</p>}
-                            </div>
-                          </div>
-                          <div className={styles.requestActions}>
-                            <button className="btn btn-primary btn-sm" onClick={() => approveRequest(req)}>Approve ✅</button>
-                            <button className="btn btn-outline btn-sm" onClick={() => declineRequest(req)}>Decline</button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )
-              )}
-
-              {(tab === 'lent' || tab === 'borrowed') && (
-                <div style={{ background: '#fff', borderRadius: 12, border: '1px solid var(--border)', overflow: 'hidden', boxShadow: '0 2px 8px var(--shadow)' }}>
-                  <table className={styles.table}>
-                    <thead>
-                      <tr>
-                        <th>Item</th>
-                        <th>{tab === 'lent' ? 'Borrowed By' : 'Owner'}</th>
-                        <th>Due Back</th>
-                        <th>Status</th>
-                        <th>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(tab === 'lent' ? lent : borrowed).map(loan => {
-                        const overdue = isOverdue(loan.due_at)
-                        const person  = tab === 'lent' ? loan.borrower : loan.lender
-                        return (
-                          <tr key={loan.id}>
-                            <td><strong>{loan.items?.title}</strong></td>
-                            <td>
-                              <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                <span className="avatar" style={{ background: person?.avatar_color || '#C4622D', width: 22, height: 22, fontSize: '0.6rem' }}>{person?.full_name?.[0]}</span>
-                                {person?.full_name}
-                              </span>
-                            </td>
-                            <td>{formatDate(loan.due_at)}</td>
-                            <td><span className={`badge ${overdue ? 'badge-overdue' : 'badge-loaned'}`}>{overdue ? '⚠ Overdue' : 'Active'}</span></td>
-                            <td>
-                              {overdue && tab === 'lent'
-                                ? <button className="btn btn-primary btn-sm" onClick={() => showToast('📨 Reminder email sent!')}>Send Reminder</button>
-                                : <button className="btn btn-outline btn-sm" onClick={() => confirmReturn(loan)}>Confirm Return</button>
-                              }
-                            </td>
-                          </tr>
-                        )
-                      })}
-                      {(tab === 'lent' ? lent : borrowed).length === 0 && (
-                        <tr><td colSpan={5}><EmptyState icon={tab === 'lent' ? '📤' : '📥'} text={`Nothing ${tab} yet`} /></td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </>
+            <div className="grid-4">
+              {items.map(item => (
+                <ItemCard
+                  key={item.id} item={item}
+                  onBorrow={(i: any) => requireAuth(() => setBorrowItem(i))}
+                  onFlag={(i: any)   => requireAuth(() => setFlagItem(i))}
+                />
+              ))}
+            </div>
           )}
+
+          <div className={styles.aiSection}>
+            <h2 className="section-title">📸 AI Catalog Upload</h2>
+            <p className="section-subtitle">Snap a photo of your shelf and Claude will extract everything automatically</p>
+            <button className="btn btn-primary btn-lg" onClick={() => requireAuth(() => setShowAI(true))}>
+              Try AI Catalog Upload →
+            </button>
+          </div>
         </div>
       </div>
 
-      {reviewLoan && (
-        <ReviewModal
-          loan={reviewLoan} user={user}
-          onClose={() => setReviewLoan(null)}
-          onSuccess={() => { setReviewLoan(null); showToast('Review submitted! ⭐') }}
-          showToast={showToast}
-        />
+      {showAdd && (
+        <AddItemModal user={user} sb={sb}
+          onClose={() => setShowAdd(false)}
+          onSuccess={() => { setShowAdd(false); reload(); showToast('Item added! 🎉') }}
+          showToast={showToast} />
+      )}
+      {borrowItem && (
+        <BorrowModal item={borrowItem} user={user} sb={sb}
+          onClose={() => setBorrowItem(null)}
+          onSuccess={() => { setBorrowItem(null); reload(); showToast('Borrow request sent! 📬') }}
+          showToast={showToast} />
+      )}
+      {flagItem && (
+        <FlagModal item={flagItem} user={user} sb={sb}
+          onClose={() => setFlagItem(null)}
+          onSuccess={() => { setFlagItem(null); showToast("Thanks for the report. We'll review it.") }}
+          showToast={showToast} />
+      )}
+      {showAI && (
+        <AIUploadModal user={user} sb={sb}
+          onClose={() => setShowAI(false)}
+          onSuccess={(c: number) => { setShowAI(false); reload(); showToast(`${c} items added! 🎉`) }}
+          showToast={showToast} />
       )}
     </div>
   )
 }
 
-function EmptyState({ icon, text }: any) {
-  return (
-    <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}>
-      <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>{icon}</div>
-      <p>{text}</p>
-    </div>
-  )
-}
-
-function ReviewModal({ loan, user, onClose, onSuccess, showToast }: any) {
-  const [rating, setRating]   = useState(5)
-  const [comment, setComment] = useState('')
+function AddItemModal({ user, sb, onClose, onSuccess, showToast }: any) {
   const [loading, setLoading] = useState(false)
-  const revieweeId = loan.lender_id === user.id ? loan.borrower_id : loan.lender_id
+  const [form, setForm] = useState({ title: '', author_creator: '', category: 'Book', offer_type: 'lend', condition: 'good', notes: '', duration_days: 14 })
+  const set = (k: string) => (e: any) => setForm(f => ({ ...f, [k]: e.target.value }))
 
   async function submit(e: any) {
     e.preventDefault(); setLoading(true)
     try {
-      const { error } = await sb.from('reviews').insert({
-        reviewer_id: user.id, reviewee_id: revieweeId,
-        loan_id: loan.id, rating, comment
+      let metadata: any = {}, cover_image_url = null
+      if (form.category === 'Book' && form.title) {
+        try {
+          const res = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(form.title)}&limit=1`)
+          const data = await res.json()
+          if (data.docs?.[0]) {
+            const doc = data.docs[0]
+            metadata = { year: doc.first_publish_year, genre: doc.subject?.[0], publisher: doc.publisher?.[0] }
+            if (doc.cover_i) cover_image_url = `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
+          }
+        } catch {}
+      }
+      const { error } = await sb.from('items').insert({
+        user_id: user.id, title: form.title, author_creator: form.author_creator || null,
+        category: form.category, offer_type: form.offer_type, condition: form.condition,
+        notes: form.notes || null, metadata, cover_image_url, status: 'available'
       })
       if (error) throw error
       onSuccess()
@@ -249,26 +222,226 @@ function ReviewModal({ loan, user, onClose, onSuccess, showToast }: any) {
     <div className={modalStyles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
       <div className={modalStyles.modal}>
         <button className={modalStyles.close} onClick={onClose}>✕</button>
-        <h2 className={modalStyles.title}>Leave a Review ⭐</h2>
-        <p className={modalStyles.subtitle}>Help the community know who to trust</p>
+        <h2 className={modalStyles.title}>Add an Item</h2>
+        <p className={modalStyles.subtitle}>Share something from your home with your community</p>
         <form onSubmit={submit}>
-          <div className="form-group">
-            <label className="label">Rating</label>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              {[1,2,3,4,5].map(n => (
-                <button key={n} type="button" onClick={() => setRating(n)}
-                  style={{ background: 'none', border: 'none', fontSize: '1.8rem', cursor: 'pointer', opacity: n <= rating ? 1 : 0.3, transition: 'opacity 0.2s' }}>⭐</button>
-              ))}
+          <div className="form-group"><label className="label">Title *</label>
+            <input className="input" value={form.title} onChange={set('title')} placeholder="e.g. Beloved, The Godfather…" required />
+          </div>
+          <div className="form-group"><label className="label">Author / Creator</label>
+            <input className="input" value={form.author_creator} onChange={set('author_creator')} placeholder="e.g. Toni Morrison, Stanley Kubrick…" />
+          </div>
+          <div className={modalStyles.formRow}>
+            <div className="form-group"><label className="label">Category *</label>
+              <select className="input" value={form.category} onChange={set('category')}>
+                {['Book','DVD','VHS','CD','Game','Tool','Home Good','Other'].map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="form-group"><label className="label">Offer Type *</label>
+              <select className="input" value={form.offer_type} onChange={set('offer_type')}>
+                <option value="lend">Lend / Borrow</option>
+                <option value="swap">Permanent Swap</option>
+                <option value="barter">Barter</option>
+                <option value="free">Free / Give Away</option>
+              </select>
             </div>
           </div>
-          <div className="form-group">
-            <label className="label">Comment (optional)</label>
-            <textarea className="input" rows={3} value={comment} onChange={e => setComment(e.target.value)} placeholder="How did the exchange go?" />
+          <div className={modalStyles.formRow}>
+            <div className="form-group"><label className="label">Condition</label>
+              <select className="input" value={form.condition} onChange={set('condition')}>
+                <option value="excellent">Excellent</option><option value="good">Good</option><option value="fair">Fair</option>
+              </select>
+            </div>
+            <div className="form-group"><label className="label">Max Loan (days)</label>
+              <input className="input" type="number" value={form.duration_days} onChange={set('duration_days')} min={1} max={90} />
+            </div>
+          </div>
+          <div className="form-group"><label className="label">Notes</label>
+            <textarea className="input" rows={2} value={form.notes} onChange={set('notes')} placeholder="Any details worth knowing…" />
           </div>
           <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
-            {loading ? <span className="spinner" /> : 'Submit Review'}
+            {loading ? <span className="spinner" /> : 'Add to Community Shelf'}
           </button>
         </form>
+      </div>
+    </div>
+  )
+}
+
+function BorrowModal({ item, user, sb, onClose, onSuccess, showToast }: any) {
+  const [loading, setLoading] = useState(false)
+  const [duration, setDuration] = useState(14)
+  const [message, setMessage] = useState('')
+
+  async function submit(e: any) {
+    e.preventDefault(); setLoading(true)
+    try {
+      const { error } = await sb.from('loan_requests').insert({
+        item_id: item.id, requester_id: user.id, duration_days: duration, message, status: 'pending'
+      })
+      if (error) throw error
+      await sb.from('notifications').insert({
+        user_id: item.user_id, type: 'loan_request', title: 'New Borrow Request',
+        body: `Someone wants to borrow your "${item.title}" for ${duration} days.`,
+        data: { item_id: item.id, requester_id: user.id }
+      })
+      onSuccess()
+    } catch (err: any) { showToast(err.message, 'error') }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <div className={modalStyles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className={modalStyles.modal}>
+        <button className={modalStyles.close} onClick={onClose}>✕</button>
+        <h2 className={modalStyles.title}>Request to Borrow</h2>
+        <p className={modalStyles.subtitle}>"{item.title}" from {item.profiles?.full_name?.split(' ')[0]}</p>
+        <form onSubmit={submit}>
+          <div className="form-group"><label className="label">How long do you need it?</label>
+            <select className="input" value={duration} onChange={e => setDuration(Number(e.target.value))}>
+              {[7,14,21,30].map(d => <option key={d} value={d}>{d} days</option>)}
+            </select>
+          </div>
+          <div className="form-group"><label className="label">Message (optional)</label>
+            <textarea className="input" rows={3} value={message} onChange={e => setMessage(e.target.value)} placeholder="Introduce yourself briefly — people appreciate it!" />
+          </div>
+          <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
+            {loading ? <span className="spinner" /> : 'Send Request 📬'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function FlagModal({ item, user, sb, onClose, onSuccess, showToast }: any) {
+  const [reason, setReason] = useState('unavailable')
+  const [notes, setNotes] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  async function submit(e: any) {
+    e.preventDefault(); setLoading(true)
+    try {
+      const { error } = await sb.from('item_flags').insert({ item_id: item.id, user_id: user.id, reason, notes })
+      if (error) throw error
+      onSuccess()
+    } catch (err: any) { showToast(err.message, 'error') }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <div className={modalStyles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className={modalStyles.modal}>
+        <button className={modalStyles.close} onClick={onClose}>✕</button>
+        <h2 className={modalStyles.title}>Flag This Listing</h2>
+        <p className={modalStyles.subtitle}>Help keep the community accurate. "{item.title}"</p>
+        <form onSubmit={submit}>
+          <div className="form-group"><label className="label">Reason</label>
+            <select className="input" value={reason} onChange={e => setReason(e.target.value)}>
+              <option value="unavailable">No longer available</option>
+              <option value="incorrect_info">Incorrect information</option>
+              <option value="damaged">Item is damaged</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div className="form-group"><label className="label">Notes</label>
+            <textarea className="input" rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any details…" />
+          </div>
+          <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
+            {loading ? <span className="spinner" /> : 'Submit Flag'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function AIUploadModal({ user, sb, onClose, onSuccess, showToast }: any) {
+  const [stage, setStage] = useState<'upload' | 'processing' | 'review'>('upload')
+  const [extracted, setExtracted] = useState<any[]>([])
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [loading, setLoading] = useState(false)
+
+  async function handleFile(e: any) {
+    const file = e.target.files?.[0]; if (!file) return
+    setStage('processing')
+    try {
+      const base64 = await fileToBase64(file)
+      const res = await fetch('/api/ai-catalog', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: base64, mediaType: file.type }) })
+      const data = await res.json()
+      if (data.items) { setExtracted(data.items); setSelected(new Set(data.items.map((_: any, i: number) => i))); setStage('review') }
+      else throw new Error('Could not extract items')
+    } catch (err: any) { showToast(err.message || 'AI extraction failed', 'error'); setStage('upload') }
+  }
+
+  async function addSelected() {
+    setLoading(true)
+    try {
+      const toAdd = extracted.filter((_, i) => selected.has(i))
+      for (const item of toAdd) {
+        let cover_image_url = null
+        if (item.category === 'Book' && item.title) {
+          try {
+            const res = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(item.title)}&limit=1`)
+            const data = await res.json()
+            if (data.docs?.[0]?.cover_i) cover_image_url = `https://covers.openlibrary.org/b/id/${data.docs[0].cover_i}-M.jpg`
+          } catch {}
+        }
+        await sb.from('items').insert({ user_id: user.id, ...item, status: 'available', offer_type: 'lend', cover_image_url })
+      }
+      onSuccess(toAdd.length)
+    } catch (err: any) { showToast(err.message, 'error') }
+    finally { setLoading(false) }
+  }
+
+  function fileToBase64(file: File): Promise<string> {
+    return new Promise((res, rej) => {
+      const reader = new FileReader()
+      reader.onload = () => res((reader.result as string).split(',')[1])
+      reader.onerror = rej; reader.readAsDataURL(file)
+    })
+  }
+
+  return (
+    <div className={modalStyles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className={modalStyles.modal} style={{ maxWidth: 580 }}>
+        <button className={modalStyles.close} onClick={onClose}>✕</button>
+        <h2 className={modalStyles.title}>AI Catalog Upload</h2>
+        <p className={modalStyles.subtitle}>Powered by Claude — upload a photo of your shelf</p>
+        {stage === 'upload' && (
+          <label style={{ display: 'block', border: '2.5px dashed var(--border)', borderRadius: 12, padding: '3rem 2rem', textAlign: 'center', cursor: 'pointer', background: 'var(--cream)' }}>
+            <div style={{ fontSize: '3rem', marginBottom: '0.75rem' }}>📷</div>
+            <h3 style={{ fontFamily: 'Fraunces, serif', marginBottom: '0.5rem' }}>Drop a photo here, or click to browse</h3>
+            <p style={{ color: 'var(--muted)', fontSize: '0.88rem' }}>Bookshelves, DVD racks, CD collections</p>
+            <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />
+          </label>
+        )}
+        {stage === 'processing' && (
+          <div style={{ textAlign: 'center', padding: '3rem' }}>
+            <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>🤖</div>
+            <p style={{ fontFamily: 'Fraunces, serif', fontSize: '1.1rem' }}>Claude is scanning your shelf…</p>
+            <p style={{ color: 'var(--muted)', marginTop: '0.5rem' }}>This usually takes about 10 seconds</p>
+          </div>
+        )}
+        {stage === 'review' && (
+          <>
+            <p style={{ marginBottom: '1rem', fontWeight: 500 }}>Found {extracted.length} items — select which to add:</p>
+            <div style={{ maxHeight: 360, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.25rem' }}>
+              {extracted.map((item, i) => (
+                <label key={i} style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', padding: '0.75rem', background: selected.has(i) ? '#F0FAF0' : 'var(--cream)', border: `1.5px solid ${selected.has(i) ? 'var(--sage)' : 'var(--border)'}`, borderRadius: 8, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={selected.has(i)} onChange={() => setSelected(s => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n })} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 500 }}>{item.title}</div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>{item.author_creator} · {item.category}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+            <button className="btn btn-primary btn-lg" style={{ width: '100%' }} onClick={addSelected} disabled={loading || selected.size === 0}>
+              {loading ? <span className="spinner" /> : `Add ${selected.size} item${selected.size !== 1 ? 's' : ''} to My Shelf`}
+            </button>
+          </>
+        )}
       </div>
     </div>
   )
