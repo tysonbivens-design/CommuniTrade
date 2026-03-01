@@ -6,7 +6,20 @@ import styles from './LibraryPage.module.css'
 import modalStyles from './Modal.module.css'
 
 const CATEGORIES = ['', 'Book', 'DVD', 'VHS', 'CD', 'Game', 'Tool', 'Home Good', 'Other']
-const CAT_LABELS: Record<string, string> = { '': 'All Items', Book: '📚 Books', DVD: '🎬 DVDs', VHS: '📼 VHS', CD: '🎵 CDs', Game: '🎲 Games', Tool: '🔧 Tools', 'Home Good': '🏠 Home Goods' }
+const CAT_LABELS: Record<string, string> = {
+  '': 'All Items', Book: '📚 Books', DVD: '🎬 DVDs', VHS: '📼 VHS',
+  CD: '🎵 CDs', Game: '🎲 Games', Tool: '🔧 Tools', 'Home Good': '🏠 Home Goods'
+}
+
+// Haversine formula — calculates miles between two lat/lng points
+function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 3958.8 // Earth radius in miles
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
 
 export default function LibraryPage({ ctx }: any) {
   const { user, profile, showToast, requireAuth } = ctx
@@ -22,28 +35,58 @@ export default function LibraryPage({ ctx }: any) {
 
   const loadItems = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('items').select('*, profiles(full_name, trust_score, avatar_color)').eq('flagged', false).order('created_at', { ascending: false })
+    let q = supabase
+      .from('items')
+      .select('*, profiles(full_name, trust_score, avatar_color, lat, lng)')
+      .eq('flagged', false)
+      .order('created_at', { ascending: false })
     if (category) q = q.eq('category', category)
     if (search) q = q.ilike('title', `%${search}%`)
     const { data } = await q
-    setItems(data || [])
+
+    let results = data || []
+
+    // Filter by radius if logged in and we have coordinates
+    if (user && profile?.lat && profile?.lng && profile?.radius_miles) {
+      results = results.filter(item => {
+        // Always show the user's own items
+        if (item.user_id === user.id) return true
+        // If the item owner has no coordinates, show it anyway (don't exclude unfairly)
+        if (!item.profiles?.lat || !item.profiles?.lng) return true
+        const miles = distanceMiles(profile.lat, profile.lng, item.profiles.lat, item.profiles.lng)
+        return miles <= profile.radius_miles
+      })
+    }
+
+    setItems(results)
     setLoading(false)
-  }, [category, search])
+  }, [category, search, profile?.lat, profile?.lng, profile?.radius_miles, user])
 
   useEffect(() => { loadItems() }, [loadItems])
+
+  const radiusNote = user && profile?.radius_miles
+    ? `Showing items within ${profile.radius_miles} miles of you`
+    : null
 
   return (
     <div style={{ position: 'relative', zIndex: 1 }}>
       <div className="container">
         <div className="section">
           <h1 className="section-title">Community Library</h1>
-          <p className="section-subtitle">Browse, borrow, and lend with your neighbors</p>
+          <p className="section-subtitle">
+            {radiusNote || 'Browse, borrow, and lend with your neighbors'}
+          </p>
 
           {/* Search */}
           <div className={styles.searchRow}>
             <div className={styles.searchWrap}>
               <span className={styles.searchIcon}>🔍</span>
-              <input className={`input ${styles.searchInput}`} placeholder="Search titles, authors…" value={search} onChange={e => setSearch(e.target.value)} />
+              <input
+                className={`input ${styles.searchInput}`}
+                placeholder="Search titles, authors…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
             </div>
             <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>+ Add Item</button>
           </div>
@@ -51,7 +94,9 @@ export default function LibraryPage({ ctx }: any) {
           {/* Category tabs */}
           <div className="tabs">
             {Object.entries(CAT_LABELS).map(([val, label]) => (
-              <button key={val} className={`tab ${category === val ? 'active' : ''}`} onClick={() => setCategory(val)}>{label}</button>
+              <button key={val} className={`tab ${category === val ? 'active' : ''}`} onClick={() => setCategory(val)}>
+                {label}
+              </button>
             ))}
           </div>
 
@@ -64,7 +109,12 @@ export default function LibraryPage({ ctx }: any) {
             <div className={styles.empty}>
               <div className={styles.emptyIcon}>📚</div>
               <h3>Nothing here yet</h3>
-              <p>Be the first to add something to your community!</p>
+              <p>
+                {user && profile?.radius_miles
+                  ? `No items within ${profile.radius_miles} miles. Try increasing your radius by clicking the 📍 location pill in the top nav.`
+                  : 'Be the first to add something to your community!'
+                }
+              </p>
               <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>Add the first item</button>
             </div>
           ) : (
@@ -91,16 +141,9 @@ export default function LibraryPage({ ctx }: any) {
         </div>
       </div>
 
-      {/* Add Item Modal */}
       {showAdd && <AddItemModal user={user} onClose={() => setShowAdd(false)} onSuccess={() => { setShowAdd(false); loadItems(); showToast('Item added! 🎉') }} showToast={showToast} />}
-
-      {/* Borrow Modal */}
       {borrowItem && <BorrowModal item={borrowItem} user={user} onClose={() => setBorrowItem(null)} onSuccess={() => { setBorrowItem(null); loadItems(); showToast('Borrow request sent! 📬') }} showToast={showToast} />}
-
-      {/* Flag Modal */}
       {flagItem && <FlagModal item={flagItem} user={user} onClose={() => setFlagItem(null)} onSuccess={() => { setFlagItem(null); showToast('Thanks for the report. We\'ll review it.') }} showToast={showToast} />}
-
-      {/* AI Upload Modal */}
       {showAI && <AIUploadModal user={user} onClose={() => setShowAI(false)} onSuccess={(count: number) => { setShowAI(false); loadItems(); showToast(`${count} items added to your inventory! 🎉`) }} showToast={showToast} />}
     </div>
   )
@@ -117,7 +160,6 @@ function AddItemModal({ user, onClose, onSuccess, showToast }: any) {
     e.preventDefault()
     setLoading(true)
     try {
-      // Fetch metadata from Open Library if it's a book
       let metadata = {}
       let cover_image_url = null
       if (form.category === 'Book' && form.title) {
@@ -169,7 +211,7 @@ function AddItemModal({ user, onClose, onSuccess, showToast }: any) {
             <div className="form-group">
               <label className="label">Category *</label>
               <select className="input" value={form.category} onChange={set('category')}>
-                {['Book','DVD','VHS','CD','Game','Tool','Home Good','Other'].map(c => <option key={c}>{c}</option>)}
+                {['Book', 'DVD', 'VHS', 'CD', 'Game', 'Tool', 'Home Good', 'Other'].map(c => <option key={c}>{c}</option>)}
               </select>
             </div>
             <div className="form-group">
@@ -200,7 +242,7 @@ function AddItemModal({ user, onClose, onSuccess, showToast }: any) {
             <label className="label">Notes</label>
             <textarea className="input" rows={2} value={form.notes} onChange={set('notes')} placeholder="Any details worth knowing…" />
           </div>
-          <button type="submit" className="btn btn-primary btn-lg" style={{width:'100%'}} disabled={loading}>
+          <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
             {loading ? <span className="spinner" /> : 'Add to Community Shelf'}
           </button>
         </form>
@@ -224,7 +266,6 @@ function BorrowModal({ item, user, onClose, onSuccess, showToast }: any) {
         item_id: item.id, requester_id: user.id, duration_days: duration, message, status: 'pending'
       })
       if (error) throw error
-      // Create notification for item owner
       await supabase.from('notifications').insert({
         user_id: item.user_id,
         type: 'loan_request',
@@ -232,7 +273,6 @@ function BorrowModal({ item, user, onClose, onSuccess, showToast }: any) {
         body: `Someone wants to borrow your "${item.title}" for ${duration} days.`,
         data: { item_id: item.id, requester_id: user.id }
       })
-      // Send email via API route
       await fetch('/api/notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -254,14 +294,14 @@ function BorrowModal({ item, user, onClose, onSuccess, showToast }: any) {
           <div className="form-group">
             <label className="label">How long do you need it?</label>
             <select className="input" value={duration} onChange={e => setDuration(Number(e.target.value))}>
-              {[7,14,21,30].map(d => <option key={d} value={d}>{d} days</option>)}
+              {[7, 14, 21, 30].map(d => <option key={d} value={d}>{d} days</option>)}
             </select>
           </div>
           <div className="form-group">
             <label className="label">Message (optional)</label>
             <textarea className="input" rows={3} value={message} onChange={e => setMessage(e.target.value)} placeholder="Introduce yourself briefly — people appreciate it!" />
           </div>
-          <button type="submit" className="btn btn-primary btn-lg" style={{width:'100%'}} disabled={loading}>
+          <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
             {loading ? <span className="spinner" /> : 'Send Request 📬'}
           </button>
         </form>
@@ -309,7 +349,7 @@ function FlagModal({ item, user, onClose, onSuccess, showToast }: any) {
             <label className="label">Notes</label>
             <textarea className="input" rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any details…" />
           </div>
-          <button type="submit" className="btn btn-primary btn-lg" style={{width:'100%'}} disabled={loading}>
+          <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
             {loading ? <span className="spinner" /> : 'Submit Flag'}
           </button>
         </form>
@@ -354,7 +394,6 @@ function AIUploadModal({ user, onClose, onSuccess, showToast }: any) {
     try {
       const toAdd = extracted.filter((_, i) => selected.has(i))
       for (const item of toAdd) {
-        // Try to fetch cover
         let cover_image_url = null
         if (item.category === 'Book' && item.title) {
           try {
