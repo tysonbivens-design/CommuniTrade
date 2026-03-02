@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { createBrowserClient } from '@/lib/supabase'
+import { useSupabase } from '@/lib/useSupabase'
 import styles from './LoansPage.module.css'
 import modalStyles from './Modal.module.css'
 import type { Loan, LoanRequest, AppCtx } from '@/types'
@@ -9,7 +9,7 @@ import type { Loan, LoanRequest, AppCtx } from '@/types'
 
 export default function LoansPage({ ctx }: { ctx: AppCtx }) {
   const { user, showToast } = ctx
-  const supabase = createBrowserClient()
+  const supabase = useSupabase()
 
   const [tab, setTab] = useState<'requests' | 'lent' | 'borrowed'>('requests')
   const [requests, setRequests] = useState<LoanRequest[]>([])
@@ -113,41 +113,46 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
     setRequests(r => r.filter(x => x.id !== req.id))
   }
 
-  async function confirmReturn(loan: Loan) {
+  async function lenderConfirmReturn(loan: Loan) {
     if (!userId) return
 
-    // Self-loans (lender = borrower) need both fields set at once
-    const isSelfLoan = loan.lender_id === loan.borrower_id
-    const update = isSelfLoan
-      ? { lender_confirmed_return: true, borrower_confirmed_return: true }
-      : loan.lender_id === userId
-        ? { lender_confirmed_return: true }
-        : { borrower_confirmed_return: true }
+    const { error: loanErr } = await supabase
+      .from('loans')
+      .update({ status: 'returned', returned_at: new Date().toISOString(), lender_confirmed_return: true })
+      .eq('id', loan.id)
+    if (loanErr) { showToast(loanErr.message, 'error'); return }
 
-    const { error } = await supabase.from('loans').update(update).eq('id', loan.id)
+    const { error: itemErr } = await supabase
+      .from('items')
+      .update({ status: 'available' })
+      .eq('id', loan.item_id)
+    if (itemErr) { showToast(itemErr.message, 'error'); return }
+
+    showToast('Return confirmed! Item is available again ✅')
+    setReviewLoan(loan)
+    setLent(l => l.filter(x => x.id !== loan.id))
+  }
+
+  async function borrowerMarkReturned(loan: Loan) {
+    if (!userId) return
+
+    const { error } = await supabase
+      .from('loans')
+      .update({ borrower_confirmed_return: true })
+      .eq('id', loan.id)
     if (error) { showToast(error.message, 'error'); return }
 
-    const updated = { ...loan, ...update }
-    if (updated.lender_confirmed_return && updated.borrower_confirmed_return) {
-      const { error: loanErr } = await supabase
-        .from('loans')
-        .update({ status: 'returned', returned_at: new Date().toISOString() })
-        .eq('id', loan.id)
-      if (loanErr) { showToast(loanErr.message, 'error'); return }
+    // Notify lender to confirm
+    await supabase.from('notifications').insert({
+      user_id: loan.lender_id,
+      type: 'loan_request',
+      title: 'Item marked as returned 📦',
+      body: `The borrower says they've returned "${loan.items?.title}". Please confirm when you have it back.`,
+      data: { loan_id: loan.id },
+    })
 
-      const { error: itemErr } = await supabase
-        .from('items')
-        .update({ status: 'available' })
-        .eq('id', loan.item_id)
-      if (itemErr) { showToast(itemErr.message, 'error'); return }
-
-      showToast('Return confirmed! Item is available again ✅')
-      setReviewLoan(loan)
-      setLent(l => l.filter(x => x.id !== loan.id))
-      setBorrowed(l => l.filter(x => x.id !== loan.id))
-    } else {
-      showToast('Confirmed on your end — waiting for the other party to confirm too')
-    }
+    showToast("Marked as returned — your lender will confirm when they have it back")
+    setBorrowed(l => l.map(x => x.id === loan.id ? { ...x, borrower_confirmed_return: true } : x))
   }
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -261,10 +266,17 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
                                 </span>
                               </td>
                               <td>
-                                {overdue && tab === 'lent' ? (
+                                {tab === 'lent' && overdue && (
                                   <button className="btn btn-primary btn-sm" onClick={() => showToast('📨 Reminder email sent!')}>Send Reminder</button>
-                                ) : (
-                                  <button className="btn btn-outline btn-sm" onClick={() => confirmReturn(loan)}>Confirm Return</button>
+                                )}
+                                {tab === 'lent' && !overdue && (
+                                  <button className="btn btn-outline btn-sm" onClick={() => lenderConfirmReturn(loan)}>Confirm Return</button>
+                                )}
+                                {tab === 'borrowed' && !loan.borrower_confirmed_return && (
+                                  <button className="btn btn-outline btn-sm" onClick={() => borrowerMarkReturned(loan)}>I've Returned It</button>
+                                )}
+                                {tab === 'borrowed' && loan.borrower_confirmed_return && (
+                                  <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Waiting for lender ⏳</span>
                                 )}
                               </td>
                             </tr>
@@ -311,7 +323,7 @@ interface ReviewModalProps {
 }
 
 function ReviewModal({ loan, userId, onClose, onSuccess, showToast }: ReviewModalProps) {
-  const supabase = createBrowserClient()
+  const supabase = useSupabase()
   const [rating, setRating] = useState(5)
   const [comment, setComment] = useState('')
   const [loading, setLoading] = useState(false)
