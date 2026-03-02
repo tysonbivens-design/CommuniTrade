@@ -182,7 +182,7 @@ function MatchesGrid({ matches, userId, showToast }: { matches: BarterMatch[]; u
           wantDescription: theirPost?.want_description || '',
         }),
       })
-      showToast('Connected! They'll get your email address 📬')
+      showToast('Connected! They will get your email address 📬')
     } catch {
       showToast('Could not connect', 'error')
     }
