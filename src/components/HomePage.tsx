@@ -30,6 +30,7 @@ export default function HomePage({ ctx }: HomePageProps) {
           .from('items')
           .select('*, profiles(full_name, trust_score, avatar_color, lat, lng)')
           .eq('status', 'available')
+          .eq('archived', false)
           .order('created_at', { ascending: false })
           .limit(4),
         supabase.from('items').select('*', { count: 'exact', head: true }),
