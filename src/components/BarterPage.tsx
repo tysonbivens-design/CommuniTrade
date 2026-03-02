@@ -246,7 +246,7 @@ function BarterCard({ post, userId, showToast }: { post: BarterPost; userId: str
           wantDescription: post.want_description,
         }),
       })
-      showToast('Message sent! They'll get your contact info by email 📬')
+      showToast('Message sent! Your contact info will be shared 📬')
     } catch {
       showToast('Could not send message', 'error')
     } finally {
