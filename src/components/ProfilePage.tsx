@@ -48,6 +48,7 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
         .from('items')
         .select('*, profiles(full_name, trust_score, avatar_color, lat, lng)')
         .eq('user_id', uid)
+        .eq('archived', false)
         .order('created_at', { ascending: false }),
 
       supabase
@@ -72,14 +73,14 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
     })
   }
 
-  async function deleteItem(item: Item) {
+  async function archiveItem(item: Item) {
     if (!userId) return
     if (item.status === 'loaned') {
       showToast('Cannot remove an item that is currently on loan', 'error')
       return
     }
     if (!window.confirm(`Remove "${item.title}" from your inventory?`)) return
-    const { error } = await supabase.from('items').delete().eq('id', item.id)
+    const { error } = await supabase.from('items').update({ archived: true }).eq('id', item.id)
     if (error) { showToast(error.message, 'error'); return }
     setItems(prev => prev.filter(i => i.id !== item.id))
     setStats(s => ({ ...s, shared: s.shared - 1 }))
@@ -162,7 +163,7 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
                   <div key={item.id} style={{ position: 'relative' }}>
                     <ItemCard item={item} onBorrow={() => {}} onFlag={() => {}} />
                     <button
-                      onClick={() => deleteItem(item)}
+                      onClick={() => archiveItem(item)}
                       style={{
                         position: 'absolute', top: '0.5rem', left: '0.5rem',
                         background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none',
