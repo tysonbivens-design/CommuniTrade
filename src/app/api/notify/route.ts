@@ -15,7 +15,7 @@ const supabase = createClient(
 // 'CommuniTrade <onboarding@resend.dev>'
 // That works immediately for testing but only sends to your own email.
 // To send to ALL users you must verify your domain at resend.com/domains
-const FROM = 'CommuniTrade <notifications@communitrade.app>'
+const FROM = 'CommuniTrade <onboarding@resend.dev>'
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
 async function getProfile(userId: string) {
