@@ -65,6 +65,7 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
         .from('items')
         .select('*, profiles(full_name, trust_score, avatar_color, lat, lng)')
         .eq('flagged', false)
+        .eq('archived', false)
         .order('created_at', { ascending: false })
 
       if (category) q = q.eq('category', category)
