@@ -27,7 +27,7 @@ function timeAgo(d: string): string {
 }
 
 export default function NotificationsPage({ ctx, onRead }: NotificationsPageProps) {
-  const { user } = ctx
+  const { user, showToast } = ctx
   const supabase = useSupabase()
   const [notifs, setNotifs] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
@@ -61,6 +61,13 @@ export default function NotificationsPage({ ctx, onRead }: NotificationsPageProp
     load()
   }, [userId])
 
+  async function clearAll() {
+    await supabase.from('notifications').delete().eq('user_id', userId!)
+    setNotifs([])
+    onRead()
+    showToast('Notifications cleared')
+  }
+
   if (!userId) {
     return (
       <div className="container">
@@ -75,8 +82,15 @@ export default function NotificationsPage({ ctx, onRead }: NotificationsPageProp
     <div style={{ position: 'relative', zIndex: 1 }}>
       <div className="container">
         <div className="section">
-          <h1 className="section-title">Notifications</h1>
-          <p className="section-subtitle">Updates on your loans, trades, and matches</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.35rem', flexWrap: 'wrap', gap: '1rem' }}>
+            <div>
+              <h1 className="section-title" style={{ marginBottom: '0.35rem' }}>Notifications</h1>
+              <p className="section-subtitle" style={{ marginBottom: 0 }}>Updates on your loans, trades, and matches</p>
+            </div>
+            {notifs.length > 0 && (
+              <button className="btn btn-outline btn-sm" onClick={clearAll}>Clear All</button>
+            )}
+          </div>
 
           {loading ? (
             <p style={{ color: 'var(--muted)' }}>Loading…</p>
