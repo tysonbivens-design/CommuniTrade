@@ -33,7 +33,7 @@ export default function HomePage({ ctx }: HomePageProps) {
           .eq('archived', false)
           .order('created_at', { ascending: false })
           .limit(4),
-        supabase.from('items').select('*', { count: 'exact', head: true }),
+        supabase.from('items').select('*', { count: 'exact', head: true }).eq('archived', false),
         supabase.from('profiles').select('*', { count: 'exact', head: true }),
         supabase.from('loans').select('*', { count: 'exact', head: true }),
       ])
