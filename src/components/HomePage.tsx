@@ -63,7 +63,7 @@ export default function HomePage({ ctx }: HomePageProps) {
           </div>
           <div className={styles.heroStats}>
             <div className={styles.stat}><div className={styles.statNum}>{stats.items}</div><div className={styles.statLabel}>Items Available</div></div>
-            <div className={styles.stat}><div className={styles.statNum}>{stats.members}</div><div className={styles.statLabel}>Active Members</div></div>
+            <div className={styles.stat}><div className={styles.statNum}>{stats.members}</div><div className={styles.statLabel}>Registered Users</div></div>
             <div className={styles.stat}><div className={styles.statNum}>{stats.trades}</div><div className={styles.statLabel}>Trades Completed</div></div>
           </div>
         </div>
