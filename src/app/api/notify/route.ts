@@ -32,6 +32,31 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { type } = body
 
+    // ─── Borrower Marked Returned ────────────────────────────────────
+    if (type === 'borrower_returned') {
+      const { itemTitle, lenderId, borrowerId } = body
+
+      const [lender, borrower] = await Promise.all([
+        getProfile(lenderId),
+        getProfile(borrowerId),
+      ])
+      if (!lender?.email) return NextResponse.json({ ok: true })
+
+      await resend.emails.send({
+        from: FROM,
+        to: lender.email,
+        subject: `"${itemTitle}" has been marked as returned`,
+        html: emailTemplate({
+          heading: 'Item Returned 📦',
+          body: `Hi ${lender.full_name?.split(' ')[0] || 'neighbor'},<br><br>
+<strong>${borrower?.full_name || 'The borrower'}</strong> has marked <strong>${itemTitle}</strong> as returned.<br><br>
+Please log in and confirm the return when you have the item back in hand.`,
+          ctaText: 'Confirm Return',
+          ctaUrl: `${APP_URL}?page=loans`,
+        })
+      })
+    }
+
     // ─── Loan Request ────────────────────────────────────────────────
     if (type === 'loan_request') {
       const { item, duration, lenderId, requesterId } = body
