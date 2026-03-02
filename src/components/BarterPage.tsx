@@ -140,7 +140,7 @@ export default function BarterPage({ ctx }: { ctx: AppCtx }) {
                   </p>
                 </div>
               ) : filteredPosts.map(post => (
-                <BarterCard key={post.id} post={post} showToast={showToast} />
+                <BarterCard key={post.id} post={post} userId={userId} showToast={showToast} />
               ))}
             </div>
           )}
@@ -166,6 +166,27 @@ export default function BarterPage({ ctx }: { ctx: AppCtx }) {
 // ─── Matches Grid ──────────────────────────────────────────────────────────────
 
 function MatchesGrid({ matches, userId, showToast }: { matches: BarterMatch[]; userId: string | null; showToast: AppCtx['showToast'] }) {
+  async function connect(match: BarterMatch) {
+    const theirPost = match.user_a_id === userId ? match.post_b : match.post_a
+    const theirId = match.user_a_id === userId ? match.user_b_id : match.user_a_id
+    if (!userId || !theirId) return
+    try {
+      await fetch('/api/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'barter_message',
+          postOwnerId: theirId,
+          senderId: userId,
+          haveDescription: theirPost?.have_description || '',
+          wantDescription: theirPost?.want_description || '',
+        }),
+      })
+      showToast('Connected! They'll get your email address 📬')
+    } catch {
+      showToast('Could not connect', 'error')
+    }
+  }
   if (matches.length === 0) {
     return (
       <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}>
@@ -195,7 +216,7 @@ function MatchesGrid({ matches, userId, showToast }: { matches: BarterMatch[]; u
             </div>
             <div className={styles.matchFooter}>
               <span>with <strong>{theirPost?.profiles?.full_name}</strong></span>
-              <button className="btn btn-primary btn-sm" onClick={() => showToast('📬 Connection request sent!')}>Connect</button>
+              <button className="btn btn-primary btn-sm" onClick={() => connect(m)}>Connect</button>
             </div>
           </div>
         )
@@ -206,7 +227,33 @@ function MatchesGrid({ matches, userId, showToast }: { matches: BarterMatch[]; u
 
 // ─── Barter Card ──────────────────────────────────────────────────────────────
 
-function BarterCard({ post, showToast }: { post: BarterPost; showToast: AppCtx['showToast'] }) {
+function BarterCard({ post, userId, showToast }: { post: BarterPost; userId: string | null; showToast: AppCtx['showToast'] }) {
+  const [messaging, setMessaging] = useState(false)
+
+  async function sendMessage() {
+    if (!userId) { showToast('Sign in to message', 'error'); return }
+    if (post.user_id === userId) { showToast("That's your own post!", 'error'); return }
+    setMessaging(true)
+    try {
+      await fetch('/api/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'barter_message',
+          postOwnerId: post.user_id,
+          senderId: userId,
+          haveDescription: post.have_description,
+          wantDescription: post.want_description,
+        }),
+      })
+      showToast('Message sent! They'll get your contact info by email 📬')
+    } catch {
+      showToast('Could not send message', 'error')
+    } finally {
+      setMessaging(false)
+    }
+  }
+
   return (
     <div className={styles.card}>
       <div className={styles.cardHeader}>
@@ -217,7 +264,11 @@ function BarterCard({ post, showToast }: { post: BarterPost; showToast: AppCtx['
           <span style={{ fontSize: '0.88rem', fontWeight: 500 }}>{post.profiles?.full_name}</span>
           <span className="trust">⭐{post.profiles?.trust_score?.toFixed(1) || '5.0'}</span>
         </div>
-        <button className="btn btn-outline btn-sm" onClick={() => showToast('📬 Message sent!')}>Message</button>
+        {post.user_id !== userId && (
+          <button className="btn btn-outline btn-sm" onClick={sendMessage} disabled={messaging}>
+            {messaging ? '…' : 'Message'}
+          </button>
+        )}
       </div>
       <div className={styles.sides}>
         <div className={styles.side}>
