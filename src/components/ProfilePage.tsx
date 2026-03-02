@@ -72,6 +72,20 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
     })
   }
 
+  async function deleteItem(item: Item) {
+    if (!userId) return
+    if (item.status === 'loaned') {
+      showToast('Cannot remove an item that is currently on loan', 'error')
+      return
+    }
+    if (!window.confirm(`Remove "${item.title}" from your inventory?`)) return
+    const { error } = await supabase.from('items').delete().eq('id', item.id)
+    if (error) { showToast(error.message, 'error'); return }
+    setItems(prev => prev.filter(i => i.id !== item.id))
+    setStats(s => ({ ...s, shared: s.shared - 1 }))
+    showToast('Item removed')
+  }
+
   async function updateColor(color: string) {
     if (!userId) return
     const { error } = await supabase.from('profiles').update({ avatar_color: color }).eq('id', userId)
@@ -145,7 +159,20 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
             ) : (
               <div className="grid-4">
                 {items.map(item => (
-                  <ItemCard key={item.id} item={item} onBorrow={() => {}} onFlag={() => {}} />
+                  <div key={item.id} style={{ position: 'relative' }}>
+                    <ItemCard item={item} onBorrow={() => {}} onFlag={() => {}} />
+                    <button
+                      onClick={() => deleteItem(item)}
+                      style={{
+                        position: 'absolute', top: '0.5rem', left: '0.5rem',
+                        background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none',
+                        borderRadius: 6, padding: '0.2rem 0.5rem', fontSize: '0.72rem',
+                        cursor: 'pointer', zIndex: 2,
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
                 ))}
               </div>
             )
