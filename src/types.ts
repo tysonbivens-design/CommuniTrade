@@ -42,6 +42,7 @@ export interface Item {
   metadata: { year?: number; genre?: string; publisher?: string } | null
   flagged: boolean
   flag_count: number
+  archived: boolean
   created_at: string
   // joined
   profiles?: Pick<Profile, 'full_name' | 'trust_score' | 'avatar_color' | 'lat' | 'lng'>
