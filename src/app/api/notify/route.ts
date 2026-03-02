@@ -15,7 +15,7 @@ const supabase = createClient(
 // 'CommuniTrade <onboarding@resend.dev>'
 // That works immediately for testing but only sends to your own email.
 // To send to ALL users you must verify your domain at resend.com/domains
-const FROM = 'CommuniTrade <onboarding@resend.dev>'
+const FROM = 'CommuniTrade <notifications@communitrade.app>'
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
 async function getProfile(userId: string) {
@@ -145,6 +145,34 @@ Just a friendly reminder that <strong>${item.title}</strong> is due back in <str
 Please arrange the return with the owner.`,
           ctaText: 'View My Loans',
           ctaUrl: `${APP_URL}?page=loans`,
+        })
+      })
+    }
+
+    // ─── Barter Message ─────────────────────────────────────────────
+    if (type === 'barter_message') {
+      const { postOwnerId, senderId, haveDescription, wantDescription } = body
+
+      const [postOwner, sender] = await Promise.all([
+        getProfile(postOwnerId),
+        getProfile(senderId),
+      ])
+      if (!postOwner?.email || !sender) return NextResponse.json({ ok: true })
+
+      await resend.emails.send({
+        from: FROM,
+        to: postOwner.email,
+        subject: `${sender.full_name} is interested in your barter post`,
+        html: emailTemplate({
+          heading: 'Someone wants to trade! 🤝',
+          body: `Hi ${postOwner.full_name?.split(' ')[0] || 'neighbor'},<br><br>
+<strong>${sender.full_name}</strong> is interested in your post:<br>
+<em>You offer: ${haveDescription}</em><br>
+<em>You want: ${wantDescription}</em><br><br>
+Reach out to connect directly:<br>
+<strong>${sender.full_name}</strong> · <a href="mailto:${sender.email}">${sender.email}</a>`,
+          ctaText: 'View Barter Board',
+          ctaUrl: `${APP_URL}?page=barter`,
         })
       })
     }
