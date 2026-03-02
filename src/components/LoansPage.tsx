@@ -142,7 +142,7 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
       .eq('id', loan.id)
     if (error) { showToast(error.message, 'error'); return }
 
-    // Notify lender to confirm
+    // In-app notification for lender
     await supabase.from('notifications').insert({
       user_id: loan.lender_id,
       type: 'loan_request',
@@ -150,6 +150,18 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
       body: `The borrower says they've returned "${loan.items?.title}". Please confirm when you have it back.`,
       data: { loan_id: loan.id },
     })
+
+    // Email the lender (fire-and-forget)
+    fetch('/api/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'borrower_returned',
+        itemTitle: loan.items?.title,
+        lenderId: loan.lender_id,
+        borrowerId: userId,
+      }),
+    }).catch(() => {})
 
     showToast("Marked as returned — your lender will confirm when they have it back")
     setBorrowed(l => l.map(x => x.id === loan.id ? { ...x, borrower_confirmed_return: true } : x))
