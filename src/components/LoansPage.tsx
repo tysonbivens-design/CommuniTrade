@@ -104,6 +104,14 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
 
     showToast('Request approved! ✅')
     setRequests(r => r.filter(x => x.id !== req.id))
+
+    // Reload lent list so new loan appears immediately
+    const { data } = await supabase
+      .from('loans')
+      .select('*, items(id, title, category), borrower:profiles!loans_borrower_id_fkey(full_name, avatar_color)')
+      .eq('lender_id', userId)
+      .in('status', ['active', 'overdue'])
+    if (data) setLent(data as Loan[])
   }
 
   async function declineRequest(req: LoanRequest) {
@@ -165,6 +173,20 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
 
     showToast("Marked as returned — your lender will confirm when they have it back")
     setBorrowed(l => l.map(x => x.id === loan.id ? { ...x, borrower_confirmed_return: true } : x))
+  }
+
+  async function sendReminder(loan: Loan) {
+    fetch('/api/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'loan_due_soon',
+        itemTitle: loan.items?.title,
+        borrowerId: loan.borrower_id,
+        dueDate: new Date(loan.due_at).toLocaleDateString(),
+      }),
+    }).catch(() => {})
+    showToast('📨 Reminder email sent!')
   }
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -279,7 +301,7 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
                               </td>
                               <td>
                                 {tab === 'lent' && overdue && (
-                                  <button className="btn btn-primary btn-sm" onClick={() => showToast('📨 Reminder email sent!')}>Send Reminder</button>
+                                  <button className="btn btn-primary btn-sm" onClick={() => sendReminder(loan)}>Send Reminder</button>
                                 )}
                                 {tab === 'lent' && !overdue && (
                                   <button className="btn btn-outline btn-sm" onClick={() => lenderConfirmReturn(loan)}>Confirm Return</button>
