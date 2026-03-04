@@ -1,11 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { createClient } from '@supabase/supabase-js'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+const DAILY_LIMIT = 5
 
 export async function POST(req: NextRequest) {
   try {
-    const { image, mediaType } = await req.json()
+    const { image, mediaType, userId } = await req.json()
+
+    // Rate limit: max 5 AI uploads per user per 24 hours
+    if (userId) {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+      const { count } = await supabase
+        .from('ai_usage')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('feature', 'catalog')
+        .gte('created_at', since)
+
+      if ((count ?? 0) >= DAILY_LIMIT) {
+        return NextResponse.json(
+          { error: `Daily limit of ${DAILY_LIMIT} AI catalog uploads reached. Try again tomorrow.` },
+          { status: 429 }
+        )
+      }
+
+      // Log this usage
+      await supabase.from('ai_usage').insert({ user_id: userId, feature: 'catalog' })
+    }
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',  // Sonnet: same quality for vision tasks, ~5x cheaper than Opus
