@@ -576,6 +576,13 @@ function AIUploadModal({ userId, onClose, onSuccess, showToast }: AIUploadModalP
             }
           } catch { /* optional */ }
         }
+        if ((item.category === 'DVD' || item.category === 'VHS') && item.title) {
+          try {
+            const res = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(item.title)}&apikey=${process.env.NEXT_PUBLIC_OMDB_API_KEY || 'd5714ece'}`)
+            const data = await res.json()
+            if (data.Poster && data.Poster !== 'N/A') cover_image_url = data.Poster
+          } catch { /* optional */ }
+        }
         const { error } = await supabase.from('items').insert({
           user_id: userId,
           title: item.title,
