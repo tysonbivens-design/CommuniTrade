@@ -89,6 +89,15 @@ export default function BarterPage({ ctx }: { ctx: AppCtx }) {
     ? posts
     : posts.filter(p => p.have_category === tab || p.want_category === tab)
 
+  async function removePost(postId: string) {
+    if (!userId) return
+    if (!window.confirm('Close this trade post? It will be removed from the board.')) return
+    const { error } = await supabase.from('barter_posts').update({ status: 'closed' }).eq('id', postId).eq('user_id', userId)
+    if (error) { showToast(error.message, 'error'); return }
+    setPosts(p => p.filter(x => x.id !== postId))
+    showToast('Trade post closed')
+  }
+
   const radiusNote = userId && radiusMiles
     ? `Showing trades within ${radiusMiles} miles of you`
     : 'Post what you have, find what you need. Matches happen automatically.'
@@ -140,7 +149,7 @@ export default function BarterPage({ ctx }: { ctx: AppCtx }) {
                   </p>
                 </div>
               ) : filteredPosts.map(post => (
-                <BarterCard key={post.id} post={post} userId={userId} showToast={showToast} />
+                <BarterCard key={post.id} post={post} userId={userId} showToast={showToast} onRemove={removePost} />
               ))}
             </div>
           )}
@@ -227,7 +236,7 @@ function MatchesGrid({ matches, userId, showToast }: { matches: BarterMatch[]; u
 
 // ─── Barter Card ──────────────────────────────────────────────────────────────
 
-function BarterCard({ post, userId, showToast }: { post: BarterPost; userId: string | null; showToast: AppCtx['showToast'] }) {
+function BarterCard({ post, userId, showToast, onRemove }: { post: BarterPost; userId: string | null; showToast: AppCtx['showToast']; onRemove: (id: string) => void }) {
   const [messaging, setMessaging] = useState(false)
 
   async function sendMessage() {
@@ -267,6 +276,11 @@ function BarterCard({ post, userId, showToast }: { post: BarterPost; userId: str
         {post.user_id !== userId && (
           <button className="btn btn-outline btn-sm" onClick={sendMessage} disabled={messaging}>
             {messaging ? '…' : 'Message'}
+          </button>
+        )}
+        {post.user_id === userId && (
+          <button className="btn btn-outline btn-sm" style={{ color: 'var(--muted)', fontSize: '0.78rem' }} onClick={() => onRemove(post.id)}>
+            Close Post
           </button>
         )}
       </div>
