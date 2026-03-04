@@ -27,7 +27,7 @@ function timeAgo(d: string): string {
 }
 
 export default function NotificationsPage({ ctx, onRead }: NotificationsPageProps) {
-  const { user, showToast } = ctx
+  const { user, showToast, navigate } = ctx
   const supabase = useSupabase()
   const [notifs, setNotifs] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
@@ -113,7 +113,19 @@ export default function NotificationsPage({ ctx, onRead }: NotificationsPageProp
                   <div style={{ flex: 1 }}>
                     <p style={{ fontSize: '0.88rem', fontWeight: 500, marginBottom: '0.15rem' }}>{n.title}</p>
                     <p style={{ fontSize: '0.85rem', color: 'var(--muted)', lineHeight: 1.5 }}>{n.body}</p>
-                    <p style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.35rem' }}>{timeAgo(n.created_at)}</p>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.4rem' }}>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{timeAgo(n.created_at)}</p>
+                      {(n.type === 'loan_request' || n.type === 'loan_approved' || n.type === 'loan_due' || n.type === 'loan_overdue') && (
+                        <button className="btn btn-outline btn-sm" onClick={() => navigate('loans')} style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem' }}>
+                          View Loans →
+                        </button>
+                      )}
+                      {(n.type === 'barter_match') && (
+                        <button className="btn btn-outline btn-sm" onClick={() => navigate('barter')} style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem' }}>
+                          View Match →
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
