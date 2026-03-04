@@ -263,7 +263,7 @@ function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalPro
       }
       if ((form.category === 'DVD' || form.category === 'VHS') && form.title) {
         try {
-          const res = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(form.title)}&apikey=trilogy`)
+          const res = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(form.title)}&apikey=${process.env.NEXT_PUBLIC_OMDB_API_KEY || 'd5714ece'}`)
           const data = await res.json()
           if (data.Poster && data.Poster !== 'N/A') cover_image_url = data.Poster
           if (data.Year) metadata = { ...metadata, year: parseInt(data.Year), genre: data.Genre?.split(',')[0] }
