@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { resend, getProfile, emailTemplate, FROM, APP_URL } from '@/lib/email'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,25 +9,21 @@ const supabase = createClient(
 
 function isMatch(postA: any, postB: any): boolean {
   if (postA.user_id === postB.user_id) return false
-  const aWant = postA.want_description.toLowerCase()
-  const aHave = postA.have_description.toLowerCase()
-  const bWant = postB.want_description.toLowerCase()
-  const bHave = postB.have_description.toLowerCase()
 
-  const catMatch = (
+  const catMatch =
     postA.want_category === postB.have_category ||
     postA.have_category === postB.want_category
-  )
 
-  const aWantWords = aWant.split(/\s+/).filter((w: string) => w.length > 3)
-  const bHaveWords = bHave.split(/\s+/).filter((w: string) => w.length > 3)
-  const bWantWords = bWant.split(/\s+/).filter((w: string) => w.length > 3)
-  const aHaveWords = aHave.split(/\s+/).filter((w: string) => w.length > 3)
+  const aWantWords = postA.want_description.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3)
+  const bHaveWords = postB.have_description.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3)
+  const bWantWords = postB.want_description.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3)
+  const aHaveWords = postA.have_description.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3)
 
-  const aWantsMatch = aWantWords.some((w: string) => bHaveWords.includes(w))
-  const bWantsMatch = bWantWords.some((w: string) => aHaveWords.includes(w))
+  const keywordMatch =
+    aWantWords.some((w: string) => bHaveWords.includes(w)) &&
+    bWantWords.some((w: string) => aHaveWords.includes(w))
 
-  return catMatch || (aWantsMatch && bWantsMatch)
+  return catMatch || keywordMatch
 }
 
 export async function POST(req: NextRequest) {
@@ -52,7 +49,7 @@ export async function POST(req: NextRequest) {
     let matchCount = 0
 
     for (const match of matches) {
-      // Check if match already exists
+      // Skip if match already exists
       const { data: existingMatch } = await supabase
         .from('barter_matches')
         .select('id')
@@ -61,6 +58,7 @@ export async function POST(req: NextRequest) {
 
       if (existingMatch) continue
 
+      // Create match record
       await supabase.from('barter_matches').insert({
         post_a_id: postId, post_b_id: match.id,
         user_a_id: newPost.user_id, user_b_id: match.user_id,
@@ -73,30 +71,54 @@ export async function POST(req: NextRequest) {
           user_id: newPost.user_id,
           type: 'barter_match',
           title: 'Barter Match Found! 🤝',
-          body: `Someone has what you want and wants what you have! Check your matches.`,
+          body: 'Someone has what you want and wants what you have! Check your matches.',
           data: { match_user_id: match.user_id, post_id: match.id },
         },
         {
           user_id: match.user_id,
           type: 'barter_match',
           title: 'Barter Match Found! 🤝',
-          body: `Someone has what you want and wants what you have! Check your matches.`,
+          body: 'Someone has what you want and wants what you have! Check your matches.',
           data: { match_user_id: newPost.user_id, post_id: postId },
         },
       ])
 
-      // Email both users with each other's contact info (fire-and-forget)
-      fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/notify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'barter_match',
-          userAId: newPost.user_id,
-          userBId: match.user_id,
-          haveDescA: newPost.have_description,
-          wantDescA: newPost.want_description,
-        }),
-      }).catch(() => {})
+      // Email both users directly — no internal HTTP call needed
+      const [userA, userB] = await Promise.all([
+        getProfile(newPost.user_id),
+        getProfile(match.user_id),
+      ])
+
+      if (userA?.email && userB?.email) {
+        await Promise.all([
+          resend.emails.send({
+            from: FROM, to: userA.email,
+            subject: `🤝 Barter match with ${userB.full_name}!`,
+            html: emailTemplate({
+              heading: 'You have a barter match!',
+              body: `Hi ${userA.full_name?.split(' ')[0] || 'neighbor'},<br><br>
+Great news! <strong>${userB.full_name}</strong> has what you are looking for, and wants what you are offering.<br><br>
+Reach out to connect:<br>
+<strong>${userB.full_name}</strong> · <a href="mailto:${userB.email}">${userB.email}</a>`,
+              ctaText: 'View My Matches',
+              ctaUrl: `${APP_URL}?page=barter`,
+            }),
+          }),
+          resend.emails.send({
+            from: FROM, to: userB.email,
+            subject: `🤝 Barter match with ${userA.full_name}!`,
+            html: emailTemplate({
+              heading: 'You have a barter match!',
+              body: `Hi ${userB.full_name?.split(' ')[0] || 'neighbor'},<br><br>
+Great news! <strong>${userA.full_name}</strong> has what you are looking for, and wants what you are offering.<br><br>
+Reach out to connect:<br>
+<strong>${userA.full_name}</strong> · <a href="mailto:${userA.email}">${userA.email}</a>`,
+              ctaText: 'View My Matches',
+              ctaUrl: `${APP_URL}?page=barter`,
+            }),
+          }),
+        ])
+      }
 
       matchCount++
     }
