@@ -261,6 +261,14 @@ function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalPro
           }
         } catch { /* Open Library is optional — don't block on failure */ }
       }
+      if ((form.category === 'DVD' || form.category === 'VHS') && form.title) {
+        try {
+          const res = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(form.title)}&apikey=trilogy`)
+          const data = await res.json()
+          if (data.Poster && data.Poster !== 'N/A') cover_image_url = data.Poster
+          if (data.Year) metadata = { ...metadata, year: parseInt(data.Year), genre: data.Genre?.split(',')[0] }
+        } catch { /* OMDB is optional */ }
+      }
       const { error } = await supabase.from('items').insert({
         user_id: userId,
         title: form.title,
@@ -356,13 +364,15 @@ function BorrowModal({ item, userId, onClose, onSuccess, showToast }: BorrowModa
   const [loading, setLoading] = useState(false)
   const [duration, setDuration] = useState(14)
   const [message, setMessage] = useState('')
+  const [contactInfo, setContactInfo] = useState('')
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     try {
+      const fullMessage = [message, contactInfo ? `📞 Additional contact: ${contactInfo}` : ''].filter(Boolean).join('\n\n')
       const { error } = await supabase.from('loan_requests').insert({
-        item_id: item.id, requester_id: userId, duration_days: duration, message, status: 'pending',
+        item_id: item.id, requester_id: userId, duration_days: duration, message: fullMessage || null, status: 'pending',
       })
       if (error) throw error
 
@@ -405,7 +415,14 @@ function BorrowModal({ item, userId, onClose, onSuccess, showToast }: BorrowModa
           </div>
           <div className="form-group">
             <label className="label">Message (optional)</label>
-            <textarea className="input" rows={3} value={message} onChange={e => setMessage(e.target.value)} placeholder="Introduce yourself briefly — people appreciate it!" />
+            <textarea className="input" rows={2} value={message} onChange={e => setMessage(e.target.value)} placeholder="Introduce yourself briefly — people appreciate it!" />
+          </div>
+          <div className="form-group">
+            <label className="label">Additional contact info (optional)</label>
+            <input className="input" value={contactInfo} onChange={e => setContactInfo(e.target.value)} placeholder="Phone, WhatsApp, etc." />
+          </div>
+          <div style={{ background: 'var(--cream)', borderRadius: 8, padding: '0.75rem', marginBottom: '1rem', fontSize: '0.82rem', color: 'var(--muted)' }}>
+            📧 Your registered email will be shared with the lender so you can arrange pickup.
           </div>
           <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
             {loading ? <span className="spinner" /> : 'Send Request 📬'}
@@ -518,8 +535,12 @@ function AIUploadModal({ userId, onClose, onSuccess, showToast }: AIUploadModalP
       const res = await fetch('/api/ai-catalog', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64, mediaType: file.type }),
+        body: JSON.stringify({ image: base64, mediaType: file.type, userId }),
       })
+      if (res.status === 429) {
+        const data = await res.json()
+        throw new Error(data.error || 'Daily upload limit reached. Try again tomorrow.')
+      }
       if (!res.ok) throw new Error(`Server error: ${res.status}`)
       const data = await res.json()
       if (!data.items?.length) throw new Error('No items found in photo')
