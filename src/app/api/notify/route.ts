@@ -130,18 +130,18 @@ Due back by <strong>${dueDate}</strong>.`,
 
     // ─── Loan Due Soon ───────────────────────────────────────────────
     if (type === 'loan_due_soon') {
-      const { item, borrowerId, dueDate } = body
+      const { itemTitle, borrowerId, dueDate } = body
       const borrower = await getProfile(borrowerId)
       if (!borrower?.email) return NextResponse.json({ ok: true })
 
       await resend.emails.send({
         from: FROM,
         to: borrower.email,
-        subject: `Reminder: "${item.title}" is due back soon`,
+        subject: `Reminder: "${itemTitle}" is due back soon`,
         html: emailTemplate({
           heading: '⏰ Return Reminder',
           body: `Hi ${borrower.full_name?.split(' ')[0] || 'neighbor'},<br><br>
-Just a friendly reminder that <strong>${item.title}</strong> is due back in <strong>2 days</strong> (by ${dueDate}).<br><br>
+Just a friendly reminder that <strong>${itemTitle}</strong> is due back soon (by ${dueDate}).<br><br>
 Please arrange the return with the owner.`,
           ctaText: 'View My Loans',
           ctaUrl: `${APP_URL}?page=loans`,
