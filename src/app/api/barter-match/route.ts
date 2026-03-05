@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { resend, getProfile, emailTemplate, FROM, APP_URL } from '@/lib/email'
+import { resend, emailTemplate, FROM, APP_URL } from '@/lib/email'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -30,17 +30,19 @@ export async function POST(req: NextRequest) {
   try {
     const { postId } = await req.json()
 
+    // Fetch new post WITH profile so we have email/name in one query
     const { data: newPost } = await supabase
       .from('barter_posts')
-      .select('*')
+      .select('*, profiles(email, full_name)')
       .eq('id', postId)
       .single()
 
     if (!newPost) return NextResponse.json({ matches: 0 })
 
+    // Fetch all active posts WITH profiles
     const { data: existing } = await supabase
       .from('barter_posts')
-      .select('*')
+      .select('*, profiles(email, full_name)')
       .eq('status', 'active')
       .neq('id', postId)
       .neq('user_id', newPost.user_id)
@@ -83,11 +85,9 @@ export async function POST(req: NextRequest) {
         },
       ])
 
-      // Email both users directly — no internal HTTP call needed
-      const [userA, userB] = await Promise.all([
-        getProfile(newPost.user_id),
-        getProfile(match.user_id),
-      ])
+      // Email both users — profiles already loaded above, no extra query needed
+      const userA = newPost.profiles as { email: string; full_name: string } | null
+      const userB = match.profiles as { email: string; full_name: string } | null
 
       if (userA?.email && userB?.email) {
         await Promise.all([
@@ -98,6 +98,8 @@ export async function POST(req: NextRequest) {
               heading: 'You have a barter match!',
               body: `Hi ${userA.full_name?.split(' ')[0] || 'neighbor'},<br><br>
 Great news! <strong>${userB.full_name}</strong> has what you are looking for, and wants what you are offering.<br><br>
+You offer: <em>${newPost.have_description}</em><br>
+They offer: <em>${match.have_description}</em><br><br>
 Reach out to connect:<br>
 <strong>${userB.full_name}</strong> · <a href="mailto:${userB.email}">${userB.email}</a>`,
               ctaText: 'View My Matches',
@@ -111,6 +113,8 @@ Reach out to connect:<br>
               heading: 'You have a barter match!',
               body: `Hi ${userB.full_name?.split(' ')[0] || 'neighbor'},<br><br>
 Great news! <strong>${userA.full_name}</strong> has what you are looking for, and wants what you are offering.<br><br>
+You offer: <em>${match.have_description}</em><br>
+They offer: <em>${newPost.have_description}</em><br><br>
 Reach out to connect:<br>
 <strong>${userA.full_name}</strong> · <a href="mailto:${userA.email}">${userA.email}</a>`,
               ctaText: 'View My Matches',
