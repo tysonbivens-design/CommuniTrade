@@ -380,6 +380,7 @@ interface ContactModalProps {
 
 function ContactModal({ title, subtitle, ctaText, onClose, onSubmit }: ContactModalProps) {
   const [contactInfo, setContactInfo] = useState('')
+  const [agreed, setAgreed] = useState(false)
   const [loading, setLoading] = useState(false)
 
   async function handle(e: React.FormEvent) {
@@ -411,7 +412,16 @@ function ContactModal({ title, subtitle, ctaText, onClose, onSubmit }: ContactMo
           <div style={{ background: 'var(--cream)', borderRadius: 8, padding: '0.75rem', marginBottom: '1rem', fontSize: '0.82rem', color: 'var(--muted)' }}>
             📧 Your registered email will be shared so you can arrange the trade.
           </div>
-          <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', cursor: 'pointer', fontSize: '0.83rem', color: 'var(--bark)', marginBottom: '1rem' }}>
+            <input
+              type="checkbox"
+              checked={agreed}
+              onChange={e => setAgreed(e.target.checked)}
+              style={{ marginTop: '0.15rem', accentColor: 'var(--rust)', flexShrink: 0 }}
+            />
+            I understand that trades and exchanges are at my own risk. Always meet in safe, public places.
+          </label>
+          <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading || !agreed}>
             {loading ? <span className="spinner" /> : ctaText}
           </button>
         </form>
