@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { useSupabase } from '@/lib/useSupabase'
+import { createBrowserClient } from '@/lib/supabase'
 import styles from './Modal.module.css'
 import type { AppCtx } from '@/types'
 
@@ -19,9 +19,10 @@ interface AuthForm {
 }
 
 export default function AuthModal({ mode, onClose, onSuccess, showToast }: AuthModalProps) {
-  const supabase = useSupabase()
+  const supabase = createBrowserClient()
   const [isLogin, setIsLogin] = useState(mode === 'login')
   const [loading, setLoading] = useState(false)
+  const [termsAccepted, setTermsAccepted] = useState(false)
   const [form, setForm] = useState<AuthForm>({ email: '', password: '', full_name: '', zip_code: '' })
 
   const set = (k: keyof AuthForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -29,6 +30,10 @@ export default function AuthModal({ mode, onClose, onSuccess, showToast }: AuthM
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (!isLogin && !termsAccepted) {
+      showToast('Please accept the Terms & Community Guidelines to continue', 'error')
+      return
+    }
     setLoading(true)
     try {
       if (isLogin) {
@@ -82,7 +87,42 @@ export default function AuthModal({ mode, onClose, onSuccess, showToast }: AuthM
             <label className="label">Password</label>
             <input className="input" type="password" placeholder="••••••••" value={form.password} onChange={set('password')} required minLength={6} />
           </div>
-          <button type="submit" className={`btn btn-primary btn-lg ${styles.submitBtn}`} disabled={loading}>
+
+          {/* Terms — signup only */}
+          {!isLogin && (
+            <div style={{ marginBottom: '1.25rem' }}>
+              <div style={{
+                background: 'var(--cream)', border: '1px solid var(--border)',
+                borderRadius: 8, padding: '0.9rem 1rem', fontSize: '0.8rem',
+                color: 'var(--muted)', lineHeight: 1.6, marginBottom: '0.75rem',
+                maxHeight: 160, overflowY: 'auto'
+              }}>
+                <strong style={{ color: 'var(--bark)', display: 'block', marginBottom: '0.4rem' }}>Community Guidelines & Terms</strong>
+                By joining CommuniTrade you agree that:<br /><br />
+                • You are responsible for the safe return of any borrowed items in the same condition received.<br />
+                • CommuniTrade is a community platform — we do not guarantee the quality, safety, or accuracy of any listing.<br />
+                • You participate in trades, loans, and barters at your own risk. Always meet in safe, public places.<br />
+                • You will not use the platform to scam, defraud, or harm other members.<br />
+                • Listings that are inaccurate, unavailable, or abusive may be removed.<br />
+                • CommuniTrade is not liable for lost, stolen, or damaged items, or for disputes between members.
+              </div>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--bark)' }}>
+                <input
+                  type="checkbox"
+                  checked={termsAccepted}
+                  onChange={e => setTermsAccepted(e.target.checked)}
+                  style={{ marginTop: '0.15rem', accentColor: 'var(--rust)', flexShrink: 0 }}
+                />
+                I have read and agree to the Community Guidelines & Terms
+              </label>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            className={`btn btn-primary btn-lg ${styles.submitBtn}`}
+            disabled={loading || (!isLogin && !termsAccepted)}
+          >
             {loading ? <span className="spinner" /> : isLogin ? 'Sign In' : 'Create Free Account'}
           </button>
         </form>
