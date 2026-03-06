@@ -11,25 +11,24 @@ import ProfilePage from '@/components/ProfilePage'
 import AdminPage from '@/components/AdminPage'
 import AuthModal from '@/components/AuthModal'
 import Toast from '@/components/Toast'
+import NotifToast from '@/components/NotifToast'
 
 export type Page = 'home' | 'library' | 'barter' | 'loans' | 'notifications' | 'profile' | 'admin'
 
-// ── Supabase client created ONCE at module level, never recreated ──────────
-// This is the root cause of the infinite re-render loop — if created inside
-// the component it gets a new reference on every render, causing new
-// subscriptions, which cause state updates, which cause more renders.
+// Supabase client created ONCE at module level — never recreated
 const supabase = createBrowserClient()
 
 export default function App() {
-  const [page, setPage]         = useState<Page>('home')
-  const [user, setUser]         = useState<any>(null)
-  const [profile, setProfile]   = useState<any>(null)
-  const [showAuth, setShowAuth] = useState(false)
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup')
-  const [toast, setToast]       = useState<{ msg: string; type?: 'success' | 'error' } | null>(null)
+  const [page, setPage]       = useState<Page>('home')
+  const [user, setUser]       = useState<any>(null)
+  const [profile, setProfile] = useState<any>(null)
+  const [showAuth, setShowAuth]   = useState(false)
+  const [authMode, setAuthMode]   = useState<'login' | 'signup'>('signup')
+  const [toast, setToast]         = useState<{ msg: string; type?: 'success' | 'error' } | null>(null)
   const [notifCount, setNotifCount] = useState(0)
+  const [notifToast, setNotifToast] = useState<{ title: string; type: string } | null>(null)
 
-  // ── Auth state — runs once on mount ──────────────────────────────────────
+  // ── Auth state ────────────────────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
@@ -43,7 +42,7 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // ── Realtime notification badge — only re-subscribes when user.id changes
+  // ── Realtime notifications ────────────────────────────────────────────────
   useEffect(() => {
     if (!user?.id) return
     const channel = supabase
@@ -51,11 +50,18 @@ export default function App() {
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'notifications',
         filter: `user_id=eq.${user.id}`
-      }, () => setNotifCount(c => c + 1))
+      }, (payload) => {
+        setNotifCount(c => c + 1)
+        // Show floating toast unless user is already on notifications page
+        if (page !== 'notifications') {
+          const { title, type } = payload.new as { title: string; type: string }
+          setNotifToast({ title, type })
+        }
+      })
       .subscribe()
     loadNotifCount(user.id)
     return () => { supabase.removeChannel(channel) }
-  }, [user?.id])
+  }, [user?.id, page])
 
   async function loadProfile(uid: string) {
     const { data } = await supabase.from('profiles').select('*').eq('id', uid).single()
@@ -114,6 +120,15 @@ export default function App() {
       )}
 
       {toast && <Toast message={toast.msg} type={toast.type} />}
+
+      {notifToast && (
+        <NotifToast
+          title={notifToast.title}
+          type={notifToast.type}
+          onView={(p) => setPage(p as Page)}
+          onDismiss={() => setNotifToast(null)}
+        />
+      )}
     </>
   )
 }
