@@ -365,6 +365,7 @@ function BorrowModal({ item, userId, onClose, onSuccess, showToast }: BorrowModa
   const [duration, setDuration] = useState(14)
   const [message, setMessage] = useState('')
   const [contactInfo, setContactInfo] = useState('')
+  const [agreed, setAgreed] = useState(false)
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -424,7 +425,16 @@ function BorrowModal({ item, userId, onClose, onSuccess, showToast }: BorrowModa
           <div style={{ background: 'var(--cream)', borderRadius: 8, padding: '0.75rem', marginBottom: '1rem', fontSize: '0.82rem', color: 'var(--muted)' }}>
             📧 Your registered email will be shared with the lender so you can arrange pickup.
           </div>
-          <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', cursor: 'pointer', fontSize: '0.83rem', color: 'var(--bark)', marginBottom: '1rem' }}>
+            <input
+              type="checkbox"
+              checked={agreed}
+              onChange={e => setAgreed(e.target.checked)}
+              style={{ marginTop: '0.15rem', accentColor: 'var(--rust)', flexShrink: 0 }}
+            />
+            I will return this item in the same condition and understand borrowing is at my own risk.
+          </label>
+          <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading || !agreed}>
             {loading ? <span className="spinner" /> : 'Send Request 📬'}
           </button>
         </form>
@@ -650,3 +660,4 @@ function AIUploadModal({ userId, onClose, onSuccess, showToast }: AIUploadModalP
     </div>
   )
 }
+
