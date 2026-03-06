@@ -107,9 +107,13 @@ Please arrange the return with the owner.`,
 
     // ─── Barter Message ──────────────────────────────────────────────
     if (type === 'barter_message') {
-      const { postOwnerId, senderId, haveDescription, wantDescription } = body
+      const { postOwnerId, senderId, haveDescription, wantDescription, contactInfo } = body
       const [postOwner, sender] = await Promise.all([getProfile(postOwnerId), getProfile(senderId)])
       if (!postOwner?.email || !sender) return NextResponse.json({ ok: true })
+
+      const extraContact = contactInfo
+        ? `<br>Additional contact: <strong>${contactInfo}</strong>`
+        : ''
 
       await resend.emails.send({
         from: FROM, to: postOwner.email,
@@ -121,7 +125,7 @@ Please arrange the return with the owner.`,
 <em>You offer: ${haveDescription}</em><br>
 <em>You want: ${wantDescription}</em><br><br>
 Reach out to connect:<br>
-<strong>${sender.full_name}</strong> · <a href="mailto:${sender.email}">${sender.email}</a>`,
+<strong>${sender.full_name}</strong> · <a href="mailto:${sender.email}">${sender.email}</a>${extraContact}`,
           ctaText: 'View Barter Board',
           ctaUrl: `${APP_URL}?page=barter`,
         })
