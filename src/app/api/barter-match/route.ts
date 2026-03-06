@@ -29,15 +29,12 @@ function isMatch(postA: any, postB: any): boolean {
 export async function POST(req: NextRequest) {
   try {
     const { postId } = await req.json()
-    console.log('[barter-match] postId:', postId)
 
-    const { data: newPost, error: postError } = await supabase
+    const { data: newPost } = await supabase
       .from('barter_posts')
       .select('*, profiles(email, full_name)')
       .eq('id', postId)
       .single()
-
-    console.log('[barter-match] newPost:', JSON.stringify(newPost), 'error:', postError)
 
     if (!newPost) return NextResponse.json({ matches: 0 })
 
@@ -48,11 +45,7 @@ export async function POST(req: NextRequest) {
       .neq('id', postId)
       .neq('user_id', newPost.user_id)
 
-    console.log('[barter-match] existing posts count:', existing?.length)
-
     const matches = (existing || []).filter(p => isMatch(newPost, p))
-    console.log('[barter-match] matches found:', matches.length)
-
     let matchCount = 0
 
     for (const match of matches) {
@@ -62,10 +55,7 @@ export async function POST(req: NextRequest) {
         .or(`and(post_a_id.eq.${postId},post_b_id.eq.${match.id}),and(post_a_id.eq.${match.id},post_b_id.eq.${postId})`)
         .single()
 
-      if (existingMatch) {
-        console.log('[barter-match] match already exists, skipping')
-        continue
-      }
+      if (existingMatch) continue
 
       await supabase.from('barter_matches').insert({
         post_a_id: postId, post_b_id: match.id,
@@ -93,11 +83,8 @@ export async function POST(req: NextRequest) {
       const userA = newPost.profiles as { email: string; full_name: string } | null
       const userB = match.profiles as { email: string; full_name: string } | null
 
-      console.log('[barter-match] userA:', userA?.email, 'userB:', userB?.email)
-
       if (userA?.email && userB?.email) {
-        console.log('[barter-match] sending emails...')
-        const [resultA, resultB] = await Promise.all([
+        await Promise.all([
           resend.emails.send({
             from: FROM, to: userA.email,
             subject: `🤝 Barter match with ${userB.full_name}!`,
@@ -129,9 +116,6 @@ Reach out to connect:<br>
             }),
           }),
         ])
-        console.log('[barter-match] email results:', JSON.stringify(resultA), JSON.stringify(resultB))
-      } else {
-        console.log('[barter-match] skipping email — missing profile data')
       }
 
       matchCount++
@@ -139,7 +123,6 @@ Reach out to connect:<br>
 
     return NextResponse.json({ matches: matchCount })
   } catch (err: unknown) {
-    console.error('[barter-match] error:', err)
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 })
   }
 }
