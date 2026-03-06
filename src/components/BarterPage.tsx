@@ -28,8 +28,9 @@ export default function BarterPage({ ctx }: { ctx: AppCtx }) {
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState('all')
   const [showAdd, setShowAdd] = useState(false)
+  const [connectTarget, setConnectTarget] = useState<{ match: BarterMatch } | null>(null)
+  const [messageTarget, setMessageTarget] = useState<{ post: BarterPost } | null>(null)
 
-  // Stable primitive deps
   const userId = user?.id ?? null
   const userLat = profile?.lat ?? null
   const userLng = profile?.lng ?? null
@@ -98,6 +99,26 @@ export default function BarterPage({ ctx }: { ctx: AppCtx }) {
     showToast('Trade post closed')
   }
 
+  async function dismissMatch(matchId: string) {
+    const { error } = await supabase.from('barter_matches').update({ status: 'declined' }).eq('id', matchId)
+    if (error) { showToast(error.message, 'error'); return }
+    setMatches(m => m.filter(x => x.id !== matchId))
+    showToast('Match dismissed')
+  }
+
+  async function clearAllMatches() {
+    if (!userId) return
+    if (!window.confirm('Dismiss all matches? This cannot be undone.')) return
+    const { error } = await supabase
+      .from('barter_matches')
+      .update({ status: 'declined' })
+      .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
+      .eq('status', 'pending')
+    if (error) { showToast(error.message, 'error'); return }
+    setMatches([])
+    showToast('All matches cleared')
+  }
+
   const radiusNote = userId && radiusMiles
     ? `Showing trades within ${radiusMiles} miles of you`
     : 'Post what you have, find what you need. Matches happen automatically.'
@@ -136,7 +157,13 @@ export default function BarterPage({ ctx }: { ctx: AppCtx }) {
           ) : error ? (
             <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}>⚠️ {error}</div>
           ) : tab === 'matches' ? (
-            <MatchesGrid matches={matches} userId={userId} showToast={showToast} />
+            <MatchesGrid
+              matches={matches}
+              userId={userId}
+              onConnect={(match) => setConnectTarget({ match })}
+              onDismiss={dismissMatch}
+              onClearAll={clearAllMatches}
+            />
           ) : (
             <div className={styles.grid}>
               {filteredPosts.length === 0 ? (
@@ -149,7 +176,13 @@ export default function BarterPage({ ctx }: { ctx: AppCtx }) {
                   </p>
                 </div>
               ) : filteredPosts.map(post => (
-                <BarterCard key={post.id} post={post} userId={userId} showToast={showToast} onRemove={removePost} />
+                <BarterCard
+                  key={post.id}
+                  post={post}
+                  userId={userId}
+                  onRemove={removePost}
+                  onMessage={(post) => setMessageTarget({ post })}
+                />
               ))}
             </div>
           )}
@@ -168,101 +201,136 @@ export default function BarterPage({ ctx }: { ctx: AppCtx }) {
           showToast={showToast}
         />
       )}
+
+      {connectTarget && (
+        <ContactModal
+          title="Connect with your match"
+          subtitle={`Your email will be shared. Add extra contact info if you'd like.`}
+          ctaText="Connect 🤝"
+          onClose={() => setConnectTarget(null)}
+          onSubmit={async (contactInfo) => {
+            const { match } = connectTarget
+            const theirPost = match.user_a_id === userId ? match.post_b : match.post_a
+            const theirId = match.user_a_id === userId ? match.user_b_id : match.user_a_id
+            if (!userId || !theirId) return
+            await fetch('/api/notify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                type: 'barter_message',
+                postOwnerId: theirId,
+                senderId: userId,
+                haveDescription: theirPost?.have_description || '',
+                wantDescription: theirPost?.want_description || '',
+                contactInfo,
+              }),
+            })
+            setConnectTarget(null)
+            showToast('Connected! They will receive your contact info 📬')
+          }}
+        />
+      )}
+
+      {messageTarget && (
+        <ContactModal
+          title="Message this trader"
+          subtitle={`Your email will be shared with ${messageTarget.post.profiles?.full_name?.split(' ')[0]}. Add extra contact info if you'd like.`}
+          ctaText="Send Message 📬"
+          onClose={() => setMessageTarget(null)}
+          onSubmit={async (contactInfo) => {
+            const { post } = messageTarget
+            await fetch('/api/notify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                type: 'barter_message',
+                postOwnerId: post.user_id,
+                senderId: userId,
+                haveDescription: post.have_description,
+                wantDescription: post.want_description,
+                contactInfo,
+              }),
+            })
+            setMessageTarget(null)
+            showToast('Message sent! Your contact info will be shared 📬')
+          }}
+        />
+      )}
     </div>
   )
 }
 
 // ─── Matches Grid ──────────────────────────────────────────────────────────────
 
-function MatchesGrid({ matches, userId, showToast }: { matches: BarterMatch[]; userId: string | null; showToast: AppCtx['showToast'] }) {
-  async function connect(match: BarterMatch) {
-    const theirPost = match.user_a_id === userId ? match.post_b : match.post_a
-    const theirId = match.user_a_id === userId ? match.user_b_id : match.user_a_id
-    if (!userId || !theirId) return
-    try {
-      await fetch('/api/notify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'barter_message',
-          postOwnerId: theirId,
-          senderId: userId,
-          haveDescription: theirPost?.have_description || '',
-          wantDescription: theirPost?.want_description || '',
-        }),
-      })
-      showToast('Connected! They will get your email address 📬')
-    } catch {
-      showToast('Could not connect', 'error')
-    }
-  }
+interface MatchesGridProps {
+  matches: BarterMatch[]
+  userId: string | null
+  onConnect: (match: BarterMatch) => void
+  onDismiss: (matchId: string) => void
+  onClearAll: () => void
+}
+
+function MatchesGrid({ matches, userId, onConnect, onDismiss, onClearAll }: MatchesGridProps) {
   if (matches.length === 0) {
     return (
       <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}>
         <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>🤝</div>
-        <p>No matches yet. Post a trade and we'll alert you when someone's a fit!</p>
+        <p>No matches yet. Post a trade and we will alert you when someone is a fit!</p>
       </div>
     )
   }
   return (
-    <div className={styles.grid}>
-      {matches.map(m => {
-        const myPost = m.user_a_id === userId ? m.post_a : m.post_b
-        const theirPost = m.user_a_id === userId ? m.post_b : m.post_a
-        return (
-          <div key={m.id} className={styles.matchCard}>
-            <div className={styles.matchBanner}>🎯 Barter Match!</div>
-            <div className={styles.sides}>
-              <div className={styles.side}>
-                <div className={styles.sideLabel} style={{ color: 'var(--sage)' }}>You Offer</div>
-                <div className={styles.sideContent}>{myPost?.have_description}</div>
+    <>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+        <button className="btn btn-outline btn-sm" onClick={onClearAll} style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
+          Clear All Matches
+        </button>
+      </div>
+      <div className={styles.grid}>
+        {matches.map(m => {
+          const myPost = m.user_a_id === userId ? m.post_a : m.post_b
+          const theirPost = m.user_a_id === userId ? m.post_b : m.post_a
+          return (
+            <div key={m.id} className={styles.matchCard}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <div className={styles.matchBanner}>🎯 Barter Match!</div>
+                <button
+                  onClick={() => onDismiss(m.id)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: '1rem', lineHeight: 1, padding: '0.2rem' }}
+                  title="Dismiss match"
+                >✕</button>
               </div>
-              <div className={styles.arrow}>⇄</div>
-              <div className={styles.side}>
-                <div className={styles.sideLabel} style={{ color: 'var(--rust)' }}>They Offer</div>
-                <div className={styles.sideContent}>{theirPost?.have_description}</div>
+              <div className={styles.sides}>
+                <div className={styles.side}>
+                  <div className={styles.sideLabel} style={{ color: 'var(--sage)' }}>You Offer</div>
+                  <div className={styles.sideContent}>{myPost?.have_description}</div>
+                </div>
+                <div className={styles.arrow}>⇄</div>
+                <div className={styles.side}>
+                  <div className={styles.sideLabel} style={{ color: 'var(--rust)' }}>They Offer</div>
+                  <div className={styles.sideContent}>{theirPost?.have_description}</div>
+                </div>
+              </div>
+              <div className={styles.matchFooter}>
+                <span>with <strong>{theirPost?.profiles?.full_name}</strong></span>
+                <button className="btn btn-primary btn-sm" onClick={() => onConnect(m)}>Connect</button>
               </div>
             </div>
-            <div className={styles.matchFooter}>
-              <span>with <strong>{theirPost?.profiles?.full_name}</strong></span>
-              <button className="btn btn-primary btn-sm" onClick={() => connect(m)}>Connect</button>
-            </div>
-          </div>
-        )
-      })}
-    </div>
+          )
+        })}
+      </div>
+    </>
   )
 }
 
 // ─── Barter Card ──────────────────────────────────────────────────────────────
 
-function BarterCard({ post, userId, showToast, onRemove }: { post: BarterPost; userId: string | null; showToast: AppCtx['showToast']; onRemove: (id: string) => void }) {
-  const [messaging, setMessaging] = useState(false)
-
-  async function sendMessage() {
-    if (!userId) { showToast('Sign in to message', 'error'); return }
-    if (post.user_id === userId) { showToast("That's your own post!", 'error'); return }
-    setMessaging(true)
-    try {
-      await fetch('/api/notify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'barter_message',
-          postOwnerId: post.user_id,
-          senderId: userId,
-          haveDescription: post.have_description,
-          wantDescription: post.want_description,
-        }),
-      })
-      showToast('Message sent! Your contact info will be shared 📬')
-    } catch {
-      showToast('Could not send message', 'error')
-    } finally {
-      setMessaging(false)
-    }
-  }
-
+function BarterCard({ post, userId, onRemove, onMessage }: {
+  post: BarterPost
+  userId: string | null
+  onRemove: (id: string) => void
+  onMessage: (post: BarterPost) => void
+}) {
   return (
     <div className={styles.card}>
       <div className={styles.cardHeader}>
@@ -274,9 +342,7 @@ function BarterCard({ post, userId, showToast, onRemove }: { post: BarterPost; u
           <span className="trust">⭐{post.profiles?.trust_score?.toFixed(1) || '5.0'}</span>
         </div>
         {post.user_id !== userId && (
-          <button className="btn btn-outline btn-sm" onClick={sendMessage} disabled={messaging}>
-            {messaging ? '…' : 'Message'}
-          </button>
+          <button className="btn btn-outline btn-sm" onClick={() => onMessage(post)}>Message</button>
         )}
         {post.user_id === userId && (
           <button className="btn btn-outline btn-sm" style={{ color: 'var(--muted)', fontSize: '0.78rem' }} onClick={() => onRemove(post.id)}>
@@ -298,6 +364,58 @@ function BarterCard({ post, userId, showToast, onRemove }: { post: BarterPost; u
         </div>
       </div>
       {post.notes && <p style={{ fontSize: '0.83rem', color: 'var(--muted)', marginTop: '0.75rem', fontStyle: 'italic' }}>{post.notes}</p>}
+    </div>
+  )
+}
+
+// ─── Contact Modal (shared by Message + Connect) ──────────────────────────────
+
+interface ContactModalProps {
+  title: string
+  subtitle: string
+  ctaText: string
+  onClose: () => void
+  onSubmit: (contactInfo: string) => Promise<void>
+}
+
+function ContactModal({ title, subtitle, ctaText, onClose, onSubmit }: ContactModalProps) {
+  const [contactInfo, setContactInfo] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  async function handle(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    try {
+      await onSubmit(contactInfo)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className={modalStyles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className={modalStyles.modal}>
+        <button className={modalStyles.close} onClick={onClose}>✕</button>
+        <h2 className={modalStyles.title}>{title}</h2>
+        <p className={modalStyles.subtitle}>{subtitle}</p>
+        <form onSubmit={handle}>
+          <div className="form-group">
+            <label className="label">Additional contact info (optional)</label>
+            <input
+              className="input"
+              value={contactInfo}
+              onChange={e => setContactInfo(e.target.value)}
+              placeholder="Phone, WhatsApp, Signal, etc."
+            />
+          </div>
+          <div style={{ background: 'var(--cream)', borderRadius: 8, padding: '0.75rem', marginBottom: '1rem', fontSize: '0.82rem', color: 'var(--muted)' }}>
+            📧 Your registered email will be shared so you can arrange the trade.
+          </div>
+          <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
+            {loading ? <span className="spinner" /> : ctaText}
+          </button>
+        </form>
+      </div>
     </div>
   )
 }
@@ -325,7 +443,26 @@ function AddBarterModal({ userId, onClose, onSuccess, showToast }: AddBarterModa
     e.preventDefault()
     setLoading(true)
     try {
-      const { data, error } = await supabase.from('barter_posts').insert({ user_id: userId, ...form }).select().single()
+      // Duplicate check — prevent identical active posts from the same user
+      const { data: existing } = await supabase
+        .from('barter_posts')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .ilike('have_description', form.have_description.trim())
+        .eq('have_category', form.have_category)
+
+      if (existing && existing.length > 0) {
+        showToast('You already have an active post offering this — close the existing one first.', 'error')
+        setLoading(false)
+        return
+      }
+
+      const { data, error } = await supabase
+        .from('barter_posts')
+        .insert({ user_id: userId, ...form })
+        .select()
+        .single()
       if (error) throw error
 
       // Trigger matching (fire-and-forget)
@@ -347,7 +484,7 @@ function AddBarterModal({ userId, onClose, onSuccess, showToast }: AddBarterModa
       <div className={modalStyles.modal}>
         <button className={modalStyles.close} onClick={onClose}>✕</button>
         <h2 className={modalStyles.title}>Post a Trade</h2>
-        <p className={modalStyles.subtitle}>We'll match you automatically with neighbors who have/want what you do</p>
+        <p className={modalStyles.subtitle}>We will match you automatically with neighbors who have/want what you do</p>
         <form onSubmit={submit}>
           <div className="form-group">
             <label className="label">I Have / Can Offer *</label>
@@ -360,7 +497,7 @@ function AddBarterModal({ userId, onClose, onSuccess, showToast }: AddBarterModa
             </select>
           </div>
           <div className="form-group">
-            <label className="label">I'm Looking For *</label>
+            <label className="label">I am Looking For *</label>
             <input className="input" value={form.want_description} onChange={set('want_description')} placeholder="e.g. Dog walking, homemade jam, vinyl records…" required />
           </div>
           <div className="form-group">
