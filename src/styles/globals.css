@@ -15,6 +15,8 @@
   --border: #DDD5C8;
   --card: #FFFFFF;
   --shadow: rgba(61,43,31,0.10);
+  /* Bottom nav height — used for clearance on mobile */
+  --bottom-bar-height: 56px;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -109,7 +111,7 @@ input, select, textarea { font-family: 'DM Sans', sans-serif; }
   font-size: 0.8rem; font-weight: 600; color: #fff; flex-shrink: 0;
 }
 
-/* Section */
+/* Section — adds bottom clearance on mobile for the fixed tab bar */
 .section { padding: 2.5rem 0; }
 .section-title { font-family: 'Fraunces', serif; font-size: 1.75rem; font-weight: 600; margin-bottom: 0.35rem; }
 .section-subtitle { color: var(--muted); font-size: 0.93rem; margin-bottom: 1.75rem; }
@@ -128,7 +130,7 @@ input, select, textarea { font-family: 'DM Sans', sans-serif; }
 .tab:hover { border-color: var(--rust); color: var(--rust); }
 .tab.active { background: var(--rust); border-color: var(--rust); color: #fff; }
 
-/* Toast */
+/* Toast — sits above bottom tab bar on mobile */
 .toast-container { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); z-index: 1000; }
 
 /* Loading spinner */
@@ -141,6 +143,8 @@ input, select, textarea { font-family: 'DM Sans', sans-serif; }
 /* Responsive */
 @media (max-width: 768px) {
   .grid-4, .grid-3 { grid-template-columns: 1fr 1fr; }
+  /* Clear the fixed bottom tab bar */
+  .section { padding-bottom: calc(2.5rem + var(--bottom-bar-height) + env(safe-area-inset-bottom, 0px)); }
 }
 @media (max-width: 500px) {
   .grid-4, .grid-3 { grid-template-columns: 1fr; }
