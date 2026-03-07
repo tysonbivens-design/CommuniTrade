@@ -1,7 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { resend, getProfile, emailTemplate, FROM, APP_URL } from '@/lib/email'
+import { resend, getProfile, emailTemplate, esc, FROM, APP_URL } from '@/lib/email'
+import { rateLimit, getIp } from '@/lib/ratelimit'
+
+// ─── Rate limits ──────────────────────────────────────────────────────────────
+// 20 notify calls per IP per hour — generous for legit use, blocks spam triggers
+const NOTIFY_LIMIT = 20
+const NOTIFY_WINDOW = 60 * 60 * 1000
 
 export async function POST(req: NextRequest) {
+  // Rate limit by IP
+  const ip = getIp(req)
+  if (!rateLimit(ip, NOTIFY_LIMIT, NOTIFY_WINDOW)) {
+    return NextResponse.json({ error: 'Too many requests. Please try again later.' }, { status: 429 })
+  }
+
   try {
     const body = await req.json()
     const { type } = body
@@ -14,11 +26,11 @@ export async function POST(req: NextRequest) {
 
       await resend.emails.send({
         from: FROM, to: lender.email,
-        subject: `"${itemTitle}" has been marked as returned`,
+        subject: `"${esc(itemTitle)}" has been marked as returned`,
         html: emailTemplate({
           heading: 'Item Returned 📦',
-          body: `Hi ${lender.full_name?.split(' ')[0] || 'neighbor'},<br><br>
-<strong>${borrower?.full_name || 'The borrower'}</strong> has marked <strong>${itemTitle}</strong> as returned.<br><br>
+          body: `Hi ${esc(lender.full_name?.split(' ')[0])},<br><br>
+<strong>${esc(borrower?.full_name)}</strong> has marked <strong>${esc(itemTitle)}</strong> as returned.<br><br>
 Please log in and confirm the return when you have the item back in hand.`,
           ctaText: 'Confirm Return',
           ctaUrl: `${APP_URL}?page=loans`,
@@ -34,11 +46,11 @@ Please log in and confirm the return when you have the item back in hand.`,
 
       await resend.emails.send({
         from: FROM, to: lender.email,
-        subject: `Someone wants to borrow your "${item.title}"`,
+        subject: `Someone wants to borrow your "${esc(item.title)}"`,
         html: emailTemplate({
           heading: 'New Borrow Request 📬',
-          body: `Hi ${lender.full_name?.split(' ')[0] || 'neighbor'},<br><br>
-<strong>${requester?.full_name || 'A community member'}</strong> would like to borrow your <strong>${item.title}</strong> for ${duration} days.<br><br>
+          body: `Hi ${esc(lender.full_name?.split(' ')[0])},<br><br>
+<strong>${esc(requester?.full_name)}</strong> would like to borrow your <strong>${esc(item.title)}</strong> for ${Number(duration)} days.<br><br>
 Log in to approve or decline their request.`,
           ctaText: 'View Request',
           ctaUrl: `${APP_URL}?page=loans`,
@@ -57,11 +69,11 @@ Log in to approve or decline their request.`,
         subject: `Your borrow request was approved! ✅`,
         html: emailTemplate({
           heading: 'Request Approved!',
-          body: `Hi ${borrower.full_name?.split(' ')[0] || 'neighbor'},<br><br>
-<strong>${lender?.full_name || 'Your neighbor'}</strong> approved your request to borrow <strong>${item.title}</strong>.<br><br>
+          body: `Hi ${esc(borrower.full_name?.split(' ')[0])},<br><br>
+<strong>${esc(lender?.full_name)}</strong> approved your request to borrow <strong>${esc(item.title)}</strong>.<br><br>
 Reach out to arrange pickup:<br>
-<strong>${lender?.full_name}</strong> · <a href="mailto:${lender?.email}">${lender?.email}</a><br><br>
-The item is due back by <strong>${dueDate}</strong>.`,
+<strong>${esc(lender?.full_name)}</strong> · <a href="mailto:${esc(lender?.email)}">${esc(lender?.email)}</a><br><br>
+The item is due back by <strong>${esc(dueDate)}</strong>.`,
           ctaText: 'View My Loans',
           ctaUrl: `${APP_URL}?page=loans`,
         })
@@ -70,14 +82,14 @@ The item is due back by <strong>${dueDate}</strong>.`,
       if (lender?.email) {
         await resend.emails.send({
           from: FROM, to: lender.email,
-          subject: `You approved a borrow request for "${item.title}"`,
+          subject: `You approved a borrow request for "${esc(item.title)}"`,
           html: emailTemplate({
             heading: 'Borrow Request Approved ✅',
-            body: `Hi ${lender.full_name?.split(' ')[0] || 'neighbor'},<br><br>
-You approved <strong>${borrower.full_name || 'a neighbor'}</strong>'s request to borrow <strong>${item.title}</strong>.<br><br>
+            body: `Hi ${esc(lender.full_name?.split(' ')[0])},<br><br>
+You approved <strong>${esc(borrower.full_name)}</strong>'s request to borrow <strong>${esc(item.title)}</strong>.<br><br>
 They will be in touch to arrange pickup:<br>
-<strong>${borrower.full_name}</strong> · <a href="mailto:${borrower.email}">${borrower.email}</a><br><br>
-Due back by <strong>${dueDate}</strong>.`,
+<strong>${esc(borrower.full_name)}</strong> · <a href="mailto:${esc(borrower.email)}">${esc(borrower.email)}</a><br><br>
+Due back by <strong>${esc(dueDate)}</strong>.`,
             ctaText: 'View My Loans',
             ctaUrl: `${APP_URL}?page=loans`,
           })
@@ -93,11 +105,11 @@ Due back by <strong>${dueDate}</strong>.`,
 
       await resend.emails.send({
         from: FROM, to: borrower.email,
-        subject: `Reminder: "${itemTitle}" is due back soon`,
+        subject: `Reminder: "${esc(itemTitle)}" is due back soon`,
         html: emailTemplate({
           heading: '⏰ Return Reminder',
-          body: `Hi ${borrower.full_name?.split(' ')[0] || 'neighbor'},<br><br>
-Just a friendly reminder that <strong>${itemTitle}</strong> is due back soon (by ${dueDate}).<br><br>
+          body: `Hi ${esc(borrower.full_name?.split(' ')[0])},<br><br>
+Just a friendly reminder that <strong>${esc(itemTitle)}</strong> is due back soon (by ${esc(dueDate)}).<br><br>
 Please arrange the return with the owner.`,
           ctaText: 'View My Loans',
           ctaUrl: `${APP_URL}?page=loans`,
@@ -112,20 +124,20 @@ Please arrange the return with the owner.`,
       if (!postOwner?.email || !sender) return NextResponse.json({ ok: true })
 
       const extraContact = contactInfo
-        ? `<br>Additional contact: <strong>${contactInfo}</strong>`
+        ? `<br>Additional contact: <strong>${esc(contactInfo)}</strong>`
         : ''
 
       await resend.emails.send({
         from: FROM, to: postOwner.email,
-        subject: `${sender.full_name} is interested in your barter post`,
+        subject: `${esc(sender.full_name)} is interested in your barter post`,
         html: emailTemplate({
           heading: 'Someone wants to trade! 🤝',
-          body: `Hi ${postOwner.full_name?.split(' ')[0] || 'neighbor'},<br><br>
-<strong>${sender.full_name}</strong> is interested in your post:<br>
-<em>You offer: ${haveDescription}</em><br>
-<em>You want: ${wantDescription}</em><br><br>
+          body: `Hi ${esc(postOwner.full_name?.split(' ')[0])},<br><br>
+<strong>${esc(sender.full_name)}</strong> is interested in your post:<br>
+<em>You offer: ${esc(haveDescription)}</em><br>
+<em>You want: ${esc(wantDescription)}</em><br><br>
 Reach out to connect:<br>
-<strong>${sender.full_name}</strong> · <a href="mailto:${sender.email}">${sender.email}</a>${extraContact}`,
+<strong>${esc(sender.full_name)}</strong> · <a href="mailto:${esc(sender.email)}">${esc(sender.email)}</a>${extraContact}`,
           ctaText: 'View Barter Board',
           ctaUrl: `${APP_URL}?page=barter`,
         })
