@@ -19,6 +19,7 @@ export interface Profile {
   email: string | null
   zip_code: string | null
   avatar_color: string | null
+  avatar_url: string | null
   trust_score: number
   review_count: number
   is_admin: boolean
@@ -45,7 +46,7 @@ export interface Item {
   archived: boolean
   created_at: string
   // joined
-  profiles?: Pick<Profile, 'full_name' | 'trust_score' | 'avatar_color' | 'lat' | 'lng'>
+  profiles?: Pick<Profile, 'full_name' | 'trust_score' | 'avatar_color' | 'avatar_url' | 'lat' | 'lng'>
 }
 
 export interface LoanRequest {
@@ -91,7 +92,7 @@ export interface BarterPost {
   status: BarterStatus
   created_at: string
   // joined
-  profiles?: Pick<Profile, 'full_name' | 'trust_score' | 'avatar_color' | 'lat' | 'lng'>
+  profiles?: Pick<Profile, 'full_name' | 'trust_score' | 'avatar_color' | 'avatar_url' | 'lat' | 'lng'>
 }
 
 export interface BarterMatch {
