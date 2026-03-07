@@ -11,11 +11,11 @@ import NotificationsPage from '@/components/NotificationsPage'
 import ProfilePage from '@/components/ProfilePage'
 import AdminPage from '@/components/AdminPage'
 import AuthModal from '@/components/AuthModal'
+import ConfirmBanner from '@/components/ConfirmBanner'
 import Toast from '@/components/Toast'
 import NotifToast from '@/components/NotifToast'
 import type { Profile } from '@/types'
 
-// Page type lives in types.ts — import from there, don't re-export here
 import type { Page } from '@/types'
 export type { Page }
 
@@ -29,8 +29,8 @@ export default function App() {
   const [showAuth, setShowAuth] = useState(false)
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup')
   const [toast, setToast]       = useState<{ msg: string; type?: 'success' | 'error' } | null>(null)
-  const [notifCount, setNotifCount]   = useState(0)
-  const [notifToast, setNotifToast]   = useState<{ title: string; type: string } | null>(null)
+  const [notifCount, setNotifCount] = useState(0)
+  const [notifToast, setNotifToast] = useState<{ title: string; type: string } | null>(null)
 
   // ── Auth state ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -85,9 +85,20 @@ export default function App() {
     setTimeout(() => setToast(null), 3500)
   }
 
+  // ── Email confirmation check ───────────────────────────────────────────────
+  const isConfirmed = Boolean(user?.email_confirmed_at)
+
   function requireAuth(action: () => void) {
-    if (!user) { setAuthMode('signup'); setShowAuth(true) }
-    else action()
+    if (!user) {
+      setAuthMode('signup')
+      setShowAuth(true)
+      return
+    }
+    if (!isConfirmed) {
+      showToast('Please confirm your email before doing that. Check your inbox!', 'error')
+      return
+    }
+    action()
   }
 
   const ctx = { user, profile, showToast, requireAuth, navigate: setPage }
@@ -104,6 +115,11 @@ export default function App() {
         onSignUp={() => { setAuthMode('signup'); setShowAuth(true) }}
         onSignOut={async () => { await supabase.auth.signOut(); showToast('Signed out') }}
       />
+
+      {/* Sticky banner for signed-in but unconfirmed users */}
+      {user && !isConfirmed && (
+        <ConfirmBanner email={user.email ?? ''} />
+      )}
 
       {page === 'home'          && <HomePage ctx={ctx} />}
       {page === 'library'       && <LibraryPage ctx={ctx} />}
