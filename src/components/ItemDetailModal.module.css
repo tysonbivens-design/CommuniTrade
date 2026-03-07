@@ -1,0 +1,149 @@
+.detailModal {
+  padding: 0;
+  overflow: hidden;
+  max-width: 480px;
+}
+
+/* Hero area */
+.hero {
+  position: relative;
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.heroEmoji {
+  font-size: 5rem;
+  line-height: 1;
+}
+.coverImg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 1rem;
+}
+.heroBadge {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+}
+
+/* Body */
+.body {
+  padding: 1.5rem;
+}
+.categoryPill {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 500;
+  background: var(--cream);
+  color: var(--muted);
+  padding: 0.15rem 0.55rem;
+  border-radius: 4px;
+  margin-bottom: 0.6rem;
+}
+.title {
+  font-family: 'Fraunces', serif;
+  font-size: 1.4rem;
+  font-weight: 600;
+  line-height: 1.2;
+  margin-bottom: 0.3rem;
+  color: var(--bark);
+}
+.author {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+.metaRow {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.85rem;
+}
+.metaRow span {
+  font-size: 0.78rem;
+  color: var(--muted);
+  background: var(--cream);
+  padding: 0.15rem 0.55rem;
+  border-radius: 4px;
+}
+
+/* Offer + condition pills */
+.pillRow {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.offerPill {
+  font-size: 0.82rem;
+  font-weight: 500;
+  background: #E8F5E9;
+  color: var(--sage);
+  padding: 0.3rem 0.75rem;
+  border-radius: 20px;
+}
+.conditionPill {
+  font-size: 0.82rem;
+  font-weight: 500;
+  background: var(--cream);
+  color: var(--muted);
+  padding: 0.3rem 0.75rem;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+}
+
+/* Notes */
+.notes {
+  background: var(--cream);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1.25rem;
+}
+.notesLabel {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+.notesText {
+  font-size: 0.88rem;
+  color: var(--bark);
+  line-height: 1.6;
+}
+
+/* Lender row */
+.lenderRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  background: var(--cream);
+  border-radius: 10px;
+  margin-bottom: 1.25rem;
+  border: 1px solid var(--border);
+}
+.lenderName {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--bark);
+}
+.lenderTrust {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-top: 0.1rem;
+}
+
+/* Actions */
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
