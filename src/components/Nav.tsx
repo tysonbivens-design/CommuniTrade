@@ -1,6 +1,8 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
+import type { User } from '@supabase/supabase-js'
+import type { Profile, Page } from '@/types'
 import styles from './Nav.module.css'
 
 // ─── Location helpers ──────────────────────────────────────────────────────
@@ -35,7 +37,18 @@ async function ipLocation(): Promise<{ label: string; lat: number; lng: number }
   return null
 }
 
-export default function Nav({ page, setPage, user, profile, notifCount, onSignIn, onSignUp, onSignOut }: any) {
+interface NavProps {
+  page: Page
+  setPage: (page: Page) => void
+  user: User | null
+  profile: Profile | null
+  notifCount: number
+  onSignIn: () => void
+  onSignUp: () => void
+  onSignOut: () => void
+}
+
+export default function Nav({ page, setPage, user, profile, notifCount, onSignIn, onSignUp, onSignOut }: NavProps) {
   const [locationLabel, setLocationLabel] = useState('...')
   const [radius, setRadius]               = useState(100)
   const [pillOpen, setPillOpen]           = useState(false)
