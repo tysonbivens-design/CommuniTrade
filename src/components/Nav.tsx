@@ -109,9 +109,9 @@ export default function Nav({ page, setPage, user, profile, notifCount, onSignIn
     setDrawerOpen(false)
   }
 
-  function navigate(p: string) { setPage(p); setDrawerOpen(false) }
+  function navigate(p: Page) { setPage(p); setDrawerOpen(false) }
 
-  const bottomTabs = user
+  const bottomTabs: { page: Page; icon: string; label: string }[] = user
     ? [
         { page: 'home',          icon: '🏠', label: 'Home' },
         { page: 'library',       icon: '📚', label: 'Library' },
@@ -245,7 +245,7 @@ export default function Nav({ page, setPage, user, profile, notifCount, onSignIn
         )}
 
         {/* All nav links */}
-        {[
+        {(([
           { p: 'home',    icon: '🏠', label: 'Home' },
           { p: 'library', icon: '📚', label: 'Library' },
           { p: 'barter',  icon: '🤝', label: 'Barter' },
@@ -255,7 +255,7 @@ export default function Nav({ page, setPage, user, profile, notifCount, onSignIn
             { p: 'profile',       icon: '👤', label: 'Profile' },
             ...(profile?.is_admin ? [{ p: 'admin', icon: '🛡', label: 'Admin' }] : [])
           ] : [])
-        ].map(({ p, icon, label }) => (
+        ]) as { p: Page; icon: string; label: string }[]).map(({ p, icon, label }) => (
           <button key={p} className={`${styles.drawerLink} ${page === p ? styles.active : ''}`} onClick={() => navigate(p)}>
             <span className={styles.drawerIcon}>{icon}</span>
             {label}
