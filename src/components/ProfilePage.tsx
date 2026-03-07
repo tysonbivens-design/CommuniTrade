@@ -1,9 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { useSupabase } from '@/lib/useSupabase'
+import { createBrowserClient } from '@/lib/supabase'
 import ItemCard from './ItemCard'
 import styles from './ProfilePage.module.css'
-import type { Item, AppCtx } from '@/types'
+import modalStyles from './Modal.module.css'
+import type { Item, AppCtx, OfferType, Condition } from '@/types'
 
 const COLORS = ['#C4622D', '#5A7A5C', '#D4A843', '#6B4C3B', '#8B5CF6', '#059669', '#0EA5E9', '#EC4899']
 
@@ -28,12 +29,13 @@ interface ProfilePageProps {
 
 export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) {
   const { user, profile, showToast } = ctx
-  const supabase = useSupabase()
+  const supabase = createBrowserClient()
   const [tab, setTab] = useState<'inventory' | 'reviews'>('inventory')
   const [items, setItems] = useState<Item[]>([])
   const [reviews, setReviews] = useState<Review[]>([])
   const [stats, setStats] = useState<ProfileStats>({ shared: 0, loans: 0, trades: 0 })
   const [editColor, setEditColor] = useState(false)
+  const [editItem, setEditItem] = useState<Item | null>(null)
 
   const userId = user?.id ?? null
 
@@ -85,6 +87,12 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
     setItems(prev => prev.filter(i => i.id !== item.id))
     setStats(s => ({ ...s, shared: s.shared - 1 }))
     showToast('Item removed')
+  }
+
+  function handleItemSaved(updated: Item) {
+    setItems(prev => prev.map(i => i.id === updated.id ? { ...i, ...updated } : i))
+    setEditItem(null)
+    showToast('Item updated ✅')
   }
 
   async function updateColor(color: string) {
@@ -162,17 +170,53 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
                 {items.map(item => (
                   <div key={item.id} style={{ position: 'relative' }}>
                     <ItemCard item={item} onBorrow={() => {}} onFlag={() => {}} />
-                    <button
-                      onClick={() => archiveItem(item)}
-                      style={{
-                        position: 'absolute', top: '0.5rem', left: '0.5rem',
-                        background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none',
-                        borderRadius: 6, padding: '0.2rem 0.5rem', fontSize: '0.72rem',
-                        cursor: 'pointer', zIndex: 2,
-                      }}
-                    >
-                      Remove
-                    </button>
+
+                    {/* Action buttons — only shown on own items */}
+                    <div style={{
+                      position: 'absolute', top: '0.5rem', left: '0.5rem',
+                      display: 'flex', gap: '0.35rem', zIndex: 2,
+                    }}>
+                      {/* Edit — disabled while on loan */}
+                      <button
+                        onClick={() => item.status !== 'loaned' && setEditItem(item)}
+                        title={item.status === 'loaned' ? 'Cannot edit while on loan' : 'Edit item'}
+                        style={{
+                          background: item.status === 'loaned' ? 'rgba(0,0,0,0.25)' : 'rgba(61,43,31,0.75)',
+                          color: '#fff', border: 'none', borderRadius: 6,
+                          padding: '0.2rem 0.5rem', fontSize: '0.72rem',
+                          cursor: item.status === 'loaned' ? 'not-allowed' : 'pointer',
+                          backdropFilter: 'blur(4px)',
+                        }}
+                      >
+                        ✏️ Edit
+                      </button>
+
+                      {/* Remove */}
+                      <button
+                        onClick={() => archiveItem(item)}
+                        title={item.status === 'loaned' ? 'Cannot remove while on loan' : 'Remove item'}
+                        style={{
+                          background: item.status === 'loaned' ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.55)',
+                          color: '#fff', border: 'none', borderRadius: 6,
+                          padding: '0.2rem 0.5rem', fontSize: '0.72rem',
+                          cursor: item.status === 'loaned' ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+
+                    {/* On Loan overlay hint */}
+                    {item.status === 'loaned' && (
+                      <div style={{
+                        position: 'absolute', bottom: '0.5rem', left: '0.5rem', right: '0.5rem',
+                        background: 'rgba(61,43,31,0.7)', color: '#fff', borderRadius: 6,
+                        padding: '0.25rem 0.5rem', fontSize: '0.7rem', textAlign: 'center',
+                        pointerEvents: 'none',
+                      }}>
+                        Currently on loan — editing locked
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -204,6 +248,122 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
             )
           )}
         </div>
+      </div>
+
+      {editItem && (
+        <EditItemModal
+          item={editItem}
+          onClose={() => setEditItem(null)}
+          onSave={handleItemSaved}
+          showToast={showToast}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── Edit Item Modal ───────────────────────────────────────────────────────────
+
+interface EditItemModalProps {
+  item: Item
+  onClose: () => void
+  onSave: (updated: Item) => void
+  showToast: AppCtx['showToast']
+}
+
+const OFFER_OPTIONS: { value: OfferType; label: string }[] = [
+  { value: 'lend',   label: '🤝 Lend / Borrow' },
+  { value: 'swap',   label: '🔄 Permanent Swap' },
+  { value: 'barter', label: '⚖️ Barter' },
+  { value: 'free',   label: '🎁 Free / Give Away' },
+]
+
+const CONDITION_OPTIONS: { value: Condition; label: string }[] = [
+  { value: 'excellent', label: 'Excellent' },
+  { value: 'good',      label: 'Good' },
+  { value: 'fair',      label: 'Fair' },
+]
+
+function EditItemModal({ item, onClose, onSave, showToast }: EditItemModalProps) {
+  const supabase = createBrowserClient()
+  const [loading, setLoading] = useState(false)
+  const [form, setForm] = useState({
+    title: item.title,
+    author_creator: item.author_creator ?? '',
+    offer_type: item.offer_type,
+    condition: item.condition,
+    notes: item.notes ?? '',
+  })
+
+  const set = (k: keyof typeof form) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+      setForm(f => ({ ...f, [k]: e.target.value }))
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    try {
+      const patch = {
+        title: form.title,
+        author_creator: form.author_creator || null,
+        offer_type: form.offer_type,
+        condition: form.condition,
+        notes: form.notes || null,
+      }
+      const { error } = await supabase.from('items').update(patch).eq('id', item.id)
+      if (error) throw error
+      onSave({ ...item, ...patch })
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Could not save changes', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className={modalStyles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className={modalStyles.modal}>
+        <button className={modalStyles.close} onClick={onClose}>✕</button>
+        <h2 className={modalStyles.title}>Edit Item</h2>
+        <p className={modalStyles.subtitle} style={{ marginBottom: '1.25rem' }}>
+          {item.category} · Currently <strong style={{ color: item.status === 'available' ? 'var(--sage)' : 'var(--muted)' }}>{item.status}</strong>
+        </p>
+
+        <form onSubmit={submit}>
+          <div className="form-group">
+            <label className="label">Title</label>
+            <input className="input" value={form.title} onChange={set('title')} required />
+          </div>
+
+          <div className="form-group">
+            <label className="label">Author / Creator</label>
+            <input className="input" value={form.author_creator} onChange={set('author_creator')} placeholder="e.g. Toni Morrison, Stanley Kubrick…" />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <div className="form-group">
+              <label className="label">Offer Type</label>
+              <select className="input" value={form.offer_type} onChange={set('offer_type')}>
+                {OFFER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="label">Condition</label>
+              <select className="input" value={form.condition} onChange={set('condition')}>
+                {CONDITION_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="label">Notes</label>
+            <textarea className="input" rows={2} value={form.notes} onChange={set('notes')} placeholder="Any details worth knowing…" />
+          </div>
+
+          <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
+            {loading ? <span className="spinner" /> : 'Save Changes'}
+          </button>
+        </form>
       </div>
     </div>
   )
