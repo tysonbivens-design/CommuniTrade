@@ -1,34 +1,28 @@
-/* ─── Overlay ───────────────────────────────────────────────── */
 .overlay {
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.55);
   z-index: 200;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
   padding: 1rem;
   overflow-y: auto;
-  /* iOS momentum scroll on the overlay so the whole thing is scrollable */
   -webkit-overflow-scrolling: touch;
 }
 
-/* ─── Modal shell ───────────────────────────────────────────── */
 .modal {
   background: #fff;
   border-radius: 16px;
   max-width: 480px;
   width: 100%;
-  /* No max-height — let content determine height, overlay scrolls */
   overflow: hidden;
   display: flex;
   flex-direction: column;
   box-shadow: 0 24px 64px rgba(0,0,0,0.25);
   position: relative;
-  /* Keep some top margin so modal doesn't sit flush at top */
-  margin: 2rem auto;
+  max-height: calc(100vh - 4rem);
 }
 
-/* ─── Close button (floating over hero) ────────────────────── */
 .closeBtn {
   position: absolute; top: 0.75rem; right: 0.75rem; z-index: 10;
   background: rgba(0,0,0,0.45); color: #fff;
@@ -36,86 +30,41 @@
   width: 32px; height: 32px;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; font-size: 1rem; line-height: 1;
-  transition: background 0.15s; backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
 }
 .closeBtn:hover { background: rgba(0,0,0,0.65); }
 
-/* ─── Hero image / emoji area ───────────────────────────────── */
 .hero {
-  position: relative;
-  height: 200px;
-  flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  overflow: hidden;
+  position: relative; height: 200px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
 }
 .heroEmoji { font-size: 5rem; }
-.coverImg {
-  position: absolute; inset: 0;
-  width: 100%; height: 100%; object-fit: cover;
-}
+.coverImg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .heroBadge { position: absolute; top: 0.75rem; left: 0.75rem; }
 
-/* ─── Body ──────────────────────────────────────────────────── */
 .body {
   padding: 1.25rem 1.5rem 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+  -webkit-overflow-scrolling: touch;
 }
 
-/* ─── Category pill ─────────────────────────────────────────── */
 .categoryPill {
   display: inline-block; font-size: 0.72rem; font-weight: 500;
   background: var(--cream); color: var(--muted);
   padding: 0.15rem 0.55rem; border-radius: 4px; margin-bottom: 0.5rem;
 }
-
-/* ─── Title / author ────────────────────────────────────────── */
 .title  { font-family: 'Fraunces', serif; font-size: 1.35rem; font-weight: 600; line-height: 1.25; margin-bottom: 0.2rem; }
 .author { font-size: 0.88rem; color: var(--muted); margin-bottom: 0.5rem; }
-
-/* ─── Metadata row ──────────────────────────────────────────── */
-.metaRow {
-  display: flex; gap: 0.5rem; flex-wrap: wrap;
-  font-size: 0.82rem; color: var(--muted); margin-bottom: 0.75rem;
-}
+.metaRow { display: flex; gap: 0.5rem; flex-wrap: wrap; font-size: 0.82rem; color: var(--muted); margin-bottom: 0.75rem; }
 .metaRow span + span::before { content: '·'; margin-right: 0.5rem; opacity: 0.4; }
-
-/* ─── Offer / condition pills ───────────────────────────────── */
 .pillRow { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .offerPill     { display: inline-flex; align-items: center; padding: 0.2rem 0.65rem; border-radius: 20px; font-size: 0.78rem; font-weight: 500; background: #E8F5E9; color: var(--sage); }
 .conditionPill { display: inline-flex; align-items: center; padding: 0.2rem 0.65rem; border-radius: 20px; font-size: 0.78rem; font-weight: 500; background: #FFF8E1; color: #B8860B; }
-
-/* ─── Notes ─────────────────────────────────────────────────── */
-.notes {
-  background: var(--cream); border-radius: 8px;
-  padding: 0.85rem 1rem; margin-bottom: 1rem;
-}
+.notes { background: var(--cream); border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 1rem; }
 .notesLabel { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 0.35rem; }
 .notesText  { font-size: 0.85rem; color: var(--bark); line-height: 1.6; font-style: italic; }
-
-/* ─── Lender row ────────────────────────────────────────────── */
-.lenderRow {
-  display: flex; align-items: center; gap: 0.65rem;
-  padding: 0.85rem 1rem; background: var(--cream);
-  border-radius: 10px; margin-bottom: 1.25rem;
-}
+.lenderRow { display: flex; align-items: center; gap: 0.65rem; padding: 0.85rem 1rem; background: var(--cream); border-radius: 10px; margin-bottom: 1.25rem; }
 .lenderName  { font-size: 0.9rem; font-weight: 600; }
 .lenderTrust { font-size: 0.78rem; color: var(--gold); }
-
-/* ─── Actions ───────────────────────────────────────────────── */
 .actions { display: flex; gap: 0.6rem; align-items: center; }
-
-/* ─── Mobile ────────────────────────────────────────────────── */
-@media (max-width: 600px) {
-  .overlay {
-    padding: 0.5rem;
-    align-items: flex-start;
-  }
-  .modal {
-    margin: 0.5rem auto;
-    border-radius: 14px;
-  }
-  .hero { height: 160px; }
-  .body {
-    padding: 1rem 1.1rem;
-    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-  }
-}
