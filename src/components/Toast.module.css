@@ -1,5 +1,8 @@
 .toast {
-  position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%);
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
   background: var(--bark); color: #fff;
   padding: 0.75rem 1.5rem; border-radius: 10px;
   font-size: 0.9rem; z-index: 500;
@@ -11,4 +14,11 @@
 @keyframes slideUp {
   from { transform: translateX(-50%) translateY(20px); opacity: 0; }
   to { transform: translateX(-50%) translateY(0); opacity: 1; }
+}
+
+/* Sit above the bottom tab bar on mobile */
+@media (max-width: 768px) {
+  .toast {
+    bottom: calc(var(--bottom-bar-height) + env(safe-area-inset-bottom, 0px) + 0.75rem);
+  }
 }
