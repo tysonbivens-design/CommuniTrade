@@ -1,6 +1,7 @@
 'use client'
+import Avatar from './Avatar'
 import styles from './ItemCard.module.css'
-import type { Item, AppCtx } from '@/types'
+import type { Item } from '@/types'
 
 const EMOJIS: Record<string, string> = {
   Book: '📚', DVD: '🎬', VHS: '📼', CD: '🎵',
@@ -35,9 +36,13 @@ export default function ItemCard({ item, onBorrow, onFlag }: ItemCardProps) {
         {item.metadata?.year && <p className={styles.sub}>{item.metadata.year} · {item.metadata.genre || ''}</p>}
         <div className={styles.footer}>
           <div className={styles.user}>
-            <span className="avatar" style={{ background: item.profiles?.avatar_color || '#C4622D', width: 22, height: 22, fontSize: '0.65rem' }}>
-              {item.profiles?.full_name?.[0] || '?'}
-            </span>
+            <Avatar
+              name={item.profiles?.full_name}
+              avatarUrl={item.profiles?.avatar_url}
+              color={item.profiles?.avatar_color}
+              size={22}
+              fontSize="0.65rem"
+            />
             <span>{item.profiles?.full_name?.split(' ')[0] || 'Neighbor'}</span>
             <span className="trust">⭐{item.profiles?.trust_score?.toFixed(1) || '5.0'}</span>
           </div>
