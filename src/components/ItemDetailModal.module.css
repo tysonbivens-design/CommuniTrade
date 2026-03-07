@@ -3,10 +3,13 @@
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.55);
   z-index: 200;
-  display: flex; align-items: center; justify-content: center;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
   padding: 1rem;
-  /* prevent overlay itself from scrolling */
-  overflow: hidden;
+  overflow-y: auto;
+  /* iOS momentum scroll on the overlay so the whole thing is scrollable */
+  -webkit-overflow-scrolling: touch;
 }
 
 /* ─── Modal shell ───────────────────────────────────────────── */
@@ -15,12 +18,14 @@
   border-radius: 16px;
   max-width: 480px;
   width: 100%;
-  max-height: 88vh;
+  /* No max-height — let content determine height, overlay scrolls */
   overflow: hidden;
   display: flex;
   flex-direction: column;
   box-shadow: 0 24px 64px rgba(0,0,0,0.25);
   position: relative;
+  /* Keep some top margin so modal doesn't sit flush at top */
+  margin: 2rem auto;
 }
 
 /* ─── Close button (floating over hero) ────────────────────── */
@@ -50,13 +55,9 @@
 }
 .heroBadge { position: absolute; top: 0.75rem; left: 0.75rem; }
 
-/* ─── Scrollable body ───────────────────────────────────────── */
+/* ─── Body ──────────────────────────────────────────────────── */
 .body {
   padding: 1.25rem 1.5rem 1.5rem;
-  overflow-y: auto;
-  flex: 1;
-  /* smooth momentum scroll on iOS */
-  -webkit-overflow-scrolling: touch;
 }
 
 /* ─── Category pill ─────────────────────────────────────────── */
@@ -102,22 +103,19 @@
 /* ─── Actions ───────────────────────────────────────────────── */
 .actions { display: flex; gap: 0.6rem; align-items: center; }
 
-/* ─── Mobile: slide up from bottom ─────────────────────────── */
+/* ─── Mobile ────────────────────────────────────────────────── */
 @media (max-width: 600px) {
   .overlay {
-    align-items: flex-end;
-    padding: 0;
+    padding: 0.5rem;
+    align-items: flex-start;
   }
   .modal {
-    border-radius: 20px 20px 0 0;
-    max-width: 100%;
-    /* dvh = dynamic viewport height, accounts for iOS Safari address bar */
-    max-height: 85dvh;
-    /* fallback for older browsers */
-    max-height: min(85dvh, calc(100vh - 120px));
+    margin: 0.5rem auto;
+    border-radius: 14px;
   }
-  .hero { height: 160px; flex-shrink: 0; }
+  .hero { height: 160px; }
   .body {
-    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+    padding: 1rem 1.1rem;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
   }
 }
