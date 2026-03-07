@@ -14,9 +14,9 @@ let callCount = 0
 function maybePrune() {
   if (++callCount % 100 !== 0) return
   const now = Date.now()
-  for (const [key, entry] of store) {
+  store.forEach((entry, key) => {
     if (entry.resetAt < now) store.delete(key)
-  }
+  })
 }
 
 /**
