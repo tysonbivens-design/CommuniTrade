@@ -1,109 +1,128 @@
-/* ─── Overlay ───────────────────────────────────────────────── */
-.overlay {
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,0.5);
-  z-index: 200;
-  display: flex; align-items: center; justify-content: center;
-  padding: 1rem;
+'use client'
+import Avatar from './Avatar'
+import modalStyles from './Modal.module.css'
+import styles from './ItemDetailModal.module.css'
+import type { Item, AppCtx } from '@/types'
+
+const CONDITION_LABEL: Record<string, string> = {
+  excellent: '✨ Excellent',
+  good: '👍 Good',
+  fair: '🤷 Fair',
 }
 
-/* ─── Modal shell ───────────────────────────────────────────── */
-.modal {
-  background: #fff;
-  border-radius: 16px;
-  max-width: 480px;
-  width: 100%;
-  max-height: 90vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 24px 64px rgba(0,0,0,0.25);
+const OFFER_LABEL: Record<string, string> = {
+  lend:   '🤝 Available to Borrow',
+  swap:   '🔄 Permanent Swap',
+  barter: '⚖️ Open to Barter',
+  free:   '🎁 Free / Give Away',
 }
 
-/* ─── Hero image / emoji area ───────────────────────────────── */
-.hero {
-  position: relative;
-  height: 200px;
-  flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  overflow: hidden;
-}
-.heroEmoji { font-size: 5rem; }
-.heroCover {
-  position: absolute; inset: 0;
-  width: 100%; height: 100%; object-fit: cover;
-}
-.closeBtn {
-  position: absolute; top: 0.75rem; right: 0.75rem;
-  background: rgba(0,0,0,0.45); color: #fff;
-  border: none; border-radius: 50%;
-  width: 32px; height: 32px;
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer; font-size: 1rem; line-height: 1;
-  transition: background 0.15s; backdrop-filter: blur(4px);
-}
-.closeBtn:hover { background: rgba(0,0,0,0.65); }
-.statusBadge { position: absolute; top: 0.75rem; left: 0.75rem; }
-
-/* ─── Scrollable body ───────────────────────────────────────── */
-.body {
-  padding: 1.5rem;
-  overflow-y: auto;
-  flex: 1;
+interface ItemDetailModalProps {
+  item: Item
+  onClose: () => void
+  onBorrow: (item: Item) => void
+  onFlag: (item: Item) => void
+  isOwnItem?: boolean
 }
 
-/* ─── Pill row ──────────────────────────────────────────────── */
-.pillRow { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.85rem; }
-.pill {
-  display: inline-flex; align-items: center; gap: 0.25rem;
-  padding: 0.15rem 0.55rem; border-radius: 20px;
-  font-size: 0.72rem; font-weight: 500;
-}
-.pillCategory { background: var(--cream); color: var(--muted); }
-.pillOffer    { background: #E8F5E9; color: var(--sage); }
-.pillCondition { background: #FFF8E1; color: #B8860B; }
+export default function ItemDetailModal({ item, onClose, onBorrow, onFlag, isOwnItem }: ItemDetailModalProps) {
+  const isAvailable = item.status === 'available'
 
-/* ─── Title / author ────────────────────────────────────────── */
-.title  { font-family: 'Fraunces', serif; font-size: 1.35rem; font-weight: 600; line-height: 1.25; margin-bottom: 0.2rem; }
-.author { font-size: 0.88rem; color: var(--muted); margin-bottom: 0.4rem; }
+  return (
+    <div className={modalStyles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className={`${modalStyles.modal} ${styles.detailModal}`}>
+        <button className={modalStyles.close} onClick={onClose}>✕</button>
 
-/* ─── Metadata row ──────────────────────────────────────────── */
-.meta { font-size: 0.82rem; color: var(--muted); margin-bottom: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
-.metaDot { opacity: 0.4; }
+        {/* Cover image / emoji hero */}
+        <div className={styles.hero} style={{
+          background: `linear-gradient(135deg, ${item.profiles?.avatar_color || '#C4622D'}33, ${item.profiles?.avatar_color || '#5A7A5C'}22)`
+        }}>
+          {item.cover_image_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={item.cover_image_url} alt={item.title} className={styles.coverImg} />
+          ) : (
+            <span className={styles.heroEmoji}>
+              {{ Book: '📚', DVD: '🎬', VHS: '📼', CD: '🎵', Game: '🎲', Tool: '🔧', 'Home Good': '🏠', Other: '📦' }[item.category] || '📦'}
+            </span>
+          )}
+          <span className={`badge ${isAvailable ? 'badge-available' : 'badge-loaned'} ${styles.heroBadge}`}>
+            {isAvailable ? 'Available' : 'On Loan'}
+          </span>
+        </div>
 
-/* ─── Notes ─────────────────────────────────────────────────── */
-.notes {
-  background: var(--cream); border-radius: 8px;
-  padding: 0.85rem 1rem; font-size: 0.85rem; color: var(--bark);
-  line-height: 1.6; margin-bottom: 1rem; font-style: italic;
-}
+        {/* Content */}
+        <div className={styles.body}>
+          <div className={styles.categoryPill}>{item.category}</div>
+          <h2 className={styles.title}>{item.title}</h2>
+          {item.author_creator && (
+            <p className={styles.author}>{item.author_creator}</p>
+          )}
 
-/* ─── Owner row ─────────────────────────────────────────────── */
-.ownerRow {
-  display: flex; align-items: center; gap: 0.65rem;
-  padding: 0.85rem 1rem; background: var(--cream);
-  border-radius: 10px; margin-bottom: 1.25rem;
-}
-.ownerInfo { flex: 1; }
-.ownerName  { font-size: 0.9rem; font-weight: 600; }
-.ownerTrust { font-size: 0.78rem; color: var(--gold); }
+          {/* Metadata row */}
+          {(item.metadata?.year || item.metadata?.genre || item.metadata?.publisher) && (
+            <div className={styles.metaRow}>
+              {item.metadata.year && <span>{item.metadata.year}</span>}
+              {item.metadata.genre && <span>{item.metadata.genre}</span>}
+              {item.metadata.publisher && <span>{item.metadata.publisher}</span>}
+            </div>
+          )}
 
-/* ─── Actions ───────────────────────────────────────────────── */
-.actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
-.actions .btn { flex: 1; min-width: 120px; }
+          {/* Offer + condition pills */}
+          <div className={styles.pillRow}>
+            <span className={styles.offerPill}>{OFFER_LABEL[item.offer_type] || item.offer_type}</span>
+            <span className={styles.conditionPill}>{CONDITION_LABEL[item.condition] || item.condition}</span>
+          </div>
 
-/* ─── Mobile: slide up from bottom ─────────────────────────── */
-@media (max-width: 600px) {
-  .overlay {
-    align-items: flex-end;
-    padding: 0;
-  }
-  .modal {
-    border-radius: 20px 20px 0 0;
-    max-width: 100%;
-    max-height: 92vh;
-    /* snap to bottom safely */
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
-  .hero { height: 180px; }
+          {/* Notes */}
+          {item.notes && (
+            <div className={styles.notes}>
+              <p className={styles.notesLabel}>Notes from owner</p>
+              <p className={styles.notesText}>{item.notes}</p>
+            </div>
+          )}
+
+          {/* Lender info */}
+          <div className={styles.lenderRow}>
+            <Avatar
+              name={item.profiles?.full_name}
+              avatarUrl={item.profiles?.avatar_url}
+              color={item.profiles?.avatar_color}
+              size={36}
+            />
+            <div>
+              <p className={styles.lenderName}>{item.profiles?.full_name || 'A neighbor'}</p>
+              <p className={styles.lenderTrust}>⭐ {item.profiles?.trust_score?.toFixed(1) || '5.0'} trust score</p>
+            </div>
+          </div>
+
+          {/* Actions */}
+          {!isOwnItem && (
+            <div className={styles.actions}>
+              {isAvailable ? (
+                <button
+                  className="btn btn-primary btn-lg"
+                  style={{ flex: 1 }}
+                  onClick={() => { onClose(); onBorrow(item) }}
+                >
+                  Request to Borrow 📬
+                </button>
+              ) : (
+                <button className="btn btn-outline btn-lg" style={{ flex: 1 }} disabled>
+                  Currently On Loan
+                </button>
+              )}
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => { onClose(); onFlag(item) }}
+                title="Flag this listing"
+                style={{ color: 'var(--muted)', fontSize: '1rem' }}
+              >
+                🚩
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }
