@@ -59,7 +59,7 @@ export interface LoanRequest {
   created_at: string
   // joined
   items?: Pick<Item, 'id' | 'title' | 'category' | 'user_id'>
-  profiles?: Pick<Profile, 'full_name' | 'email' | 'trust_score' | 'avatar_color'>
+  profiles?: Pick<Profile, 'full_name' | 'email' | 'trust_score' | 'avatar_color' | 'avatar_url'>
 }
 
 export interface Loan {
@@ -77,8 +77,8 @@ export interface Loan {
   created_at: string
   // joined
   items?: Pick<Item, 'id' | 'title' | 'category'>
-  lender?: Pick<Profile, 'full_name' | 'avatar_color'>
-  borrower?: Pick<Profile, 'full_name' | 'avatar_color'>
+  lender?: Pick<Profile, 'full_name' | 'avatar_color' | 'avatar_url'>
+  borrower?: Pick<Profile, 'full_name' | 'avatar_color' | 'avatar_url'>
 }
 
 export interface BarterPost {
@@ -104,8 +104,8 @@ export interface BarterMatch {
   status: MatchStatus
   created_at: string
   // joined
-  post_a?: BarterPost & { profiles?: Pick<Profile, 'full_name' | 'avatar_color'> }
-  post_b?: BarterPost & { profiles?: Pick<Profile, 'full_name' | 'avatar_color'> }
+  post_a?: BarterPost & { profiles?: Pick<Profile, 'full_name' | 'avatar_color' | 'avatar_url'> }
+  post_b?: BarterPost & { profiles?: Pick<Profile, 'full_name' | 'avatar_color' | 'avatar_url'> }
 }
 
 export interface Notification {
