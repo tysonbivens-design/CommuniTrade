@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { useSupabase } from '@/lib/useSupabase'
+import { createBrowserClient } from '@/lib/supabase'
 import styles from './LoansPage.module.css'
 import modalStyles from './Modal.module.css'
 import type { Loan, LoanRequest, AppCtx } from '@/types'
@@ -9,7 +9,7 @@ import type { Loan, LoanRequest, AppCtx } from '@/types'
 
 export default function LoansPage({ ctx }: { ctx: AppCtx }) {
   const { user, showToast } = ctx
-  const supabase = useSupabase()
+  const supabase = createBrowserClient()
 
   const [tab, setTab] = useState<'requests' | 'lent' | 'borrowed'>('requests')
   const [requests, setRequests] = useState<LoanRequest[]>([])
@@ -357,7 +357,7 @@ interface ReviewModalProps {
 }
 
 function ReviewModal({ loan, userId, onClose, onSuccess, showToast }: ReviewModalProps) {
-  const supabase = useSupabase()
+  const supabase = createBrowserClient()
   const [rating, setRating] = useState(5)
   const [comment, setComment] = useState('')
   const [loading, setLoading] = useState(false)
