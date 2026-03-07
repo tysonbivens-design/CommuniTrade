@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { useSupabase } from '@/lib/useSupabase'
+import { createBrowserClient } from '@/lib/supabase'
 import type { Notification, AppCtx } from '@/types'
 
 const PAGE_SIZE = 25
@@ -25,7 +25,7 @@ function timeAgo(d: string): string {
 
 export default function NotificationsPage({ ctx, onRead }: NotificationsPageProps) {
   const { user, showToast, navigate } = ctx
-  const supabase = useSupabase()
+  const supabase = createBrowserClient()
   const [notifs, setNotifs] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
