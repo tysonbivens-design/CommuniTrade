@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
+import { rateLimit, getIp } from '@/lib/ratelimit'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const supabase = createClient(
@@ -9,12 +10,25 @@ const supabase = createClient(
 )
 
 const DAILY_LIMIT = 5
+// Secondary IP limit: 10 attempts/hour regardless of account
+// Catches unauthenticated probing and multi-account abuse
+const IP_LIMIT = 10
+const IP_WINDOW = 60 * 60 * 1000
 
 export async function POST(req: NextRequest) {
+  // IP rate limit first — cheap check before any DB work
+  const ip = getIp(req)
+  if (!rateLimit(ip, IP_LIMIT, IP_WINDOW)) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please try again later.' },
+      { status: 429 }
+    )
+  }
+
   try {
     const { image, mediaType, userId } = await req.json()
 
-    // Rate limit: max 5 AI uploads per user per 24 hours
+    // Per-user daily limit (DB-backed, survives cold starts)
     if (userId) {
       const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
       const { count } = await supabase
@@ -31,12 +45,11 @@ export async function POST(req: NextRequest) {
         )
       }
 
-      // Log this usage
       await supabase.from('ai_usage').insert({ user_id: userId, feature: 'catalog' })
     }
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',  // Sonnet: same quality for vision tasks, ~5x cheaper than Opus
+      model: 'claude-sonnet-4-6',
       max_tokens: 1500,
       messages: [{
         role: 'user',
@@ -69,8 +82,8 @@ If you cannot identify any items clearly, return an empty array: []`
     const items = JSON.parse(clean)
 
     return NextResponse.json({ items })
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('AI catalog error:', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 })
   }
 }
