@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
 import modalStyles from './Modal.module.css'
+import { useScrollLock } from '@/lib/useScrollLock'
 import type { Item, AppCtx } from '@/types'
 
 interface BorrowModalProps {
@@ -13,6 +14,7 @@ interface BorrowModalProps {
 }
 
 export default function BorrowModal({ item, userId, onClose, onSuccess, showToast }: BorrowModalProps) {
+  useScrollLock()
   const supabase = createBrowserClient()
   const [loading, setLoading] = useState(false)
   const [duration, setDuration] = useState(14)
