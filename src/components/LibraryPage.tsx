@@ -79,7 +79,7 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
 
       let q = supabase
         .from('items')
-        .select('*, profiles(full_name, trust_score, avatar_color, lat, lng)')
+        .select('*, profiles(full_name, trust_score, avatar_color, avatar_url, lat, lng)')
         .eq('flagged', false)
         .eq('archived', false)
         .order('created_at', { ascending: false })
@@ -375,12 +375,25 @@ function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalPro
           if (data.Year) metadata = { ...metadata, year: parseInt(data.Year), genre: data.Genre?.split(',')[0] }
         } catch { /* optional */ }
       }
-      const { error } = await supabase.from('items').insert({
-        user_id: userId, title: form.title, author_creator: form.author_creator || null,
-        category: form.category, offer_type: form.offer_type, condition: form.condition,
-        notes: form.notes || null, metadata, cover_image_url, status: 'available',
+      const res = await fetch('/api/items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          items: [{
+            title: form.title,
+            author_creator: form.author_creator || null,
+            category: form.category,
+            offer_type: form.offer_type,
+            condition: form.condition,
+            notes: form.notes || null,
+            metadata,
+            cover_image_url,
+          }],
+        }),
       })
-      if (error) throw error
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Could not add item')
       onSuccess()
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : 'Could not add item', 'error')
