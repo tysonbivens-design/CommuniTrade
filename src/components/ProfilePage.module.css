@@ -1,15 +1,51 @@
-.profileHeader { background: linear-gradient(135deg, var(--bark), var(--bark-light)); padding: 3rem 0 2rem; color: #fff; }
+.profileHeader {
+  background: linear-gradient(135deg, var(--bark), var(--bark-light));
+  padding: 3rem 0 2rem; color: #fff;
+}
 .headerInner { display: flex; gap: 2rem; align-items: flex-start; flex-wrap: wrap; }
-.bigAvatar { width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: 'Fraunces', serif; font-size: 2.2rem; font-weight: 600; color: #fff; border: 3px solid var(--gold); flex-shrink: 0; }
-.editAvatarBtn { position: absolute; bottom: 0; right: 0; background: var(--bark); border: 2px solid #fff; border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.75rem; }
-.colorPicker { position: absolute; top: calc(100% + 8px); left: 0; background: #fff; border-radius: 10px; padding: 0.75rem; display: flex; gap: 0.5rem; flex-wrap: wrap; width: 160px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); z-index: 10; }
+
+/* Avatar */
+.bigAvatar {
+  width: 80px; height: 80px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Fraunces', serif; font-size: 2.2rem; font-weight: 600; color: #fff;
+  border: 3px solid var(--gold); flex-shrink: 0;
+}
+.editAvatarBtn {
+  position: absolute; bottom: 0; right: 0; background: var(--bark);
+  border: 2px solid #fff; border-radius: 50%; width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 0.75rem;
+}
+.colorPicker {
+  position: absolute; top: calc(100% + 8px); left: 0; background: #fff;
+  border-radius: 10px; padding: 0.75rem; display: flex; gap: 0.5rem;
+  flex-wrap: wrap; width: 160px; box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+  z-index: 10;
+}
 .colorDot { width: 28px; height: 28px; border-radius: 50%; cursor: pointer; transition: transform 0.2s; }
 .colorDot:hover { transform: scale(1.2); }
+
+/* Name / meta */
 .name { font-family: 'Fraunces', serif; font-size: 1.75rem; font-weight: 600; }
 .meta { color: rgba(255,255,255,0.65); font-size: 0.88rem; margin-top: 0.25rem; }
-.trustRing { display: inline-flex; align-items: center; gap: 0.4rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 20px; padding: 0.3rem 0.85rem; margin-top: 0.75rem; font-size: 0.85rem; color: var(--gold); }
+.trustRing {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 20px; padding: 0.3rem 0.85rem; margin-top: 0.75rem;
+  font-size: 0.85rem; color: var(--gold);
+}
+
+/* Stats */
 .profileStats { display: flex; gap: 2rem; margin-left: auto; padding-top: 0.5rem; }
 .pStat { text-align: center; }
 .pStatNum { font-family: 'Fraunces', serif; font-size: 1.75rem; font-weight: 600; color: var(--gold); }
 .pStatLabel { font-size: 0.75rem; color: rgba(255,255,255,0.5); }
-@media (max-width: 600px) { .profileStats { margin-left: 0; gap: 1.25rem; } .headerInner { gap: 1.25rem; } }
+
+/* Mobile */
+@media (max-width: 600px) {
+  .profileStats { margin-left: 0; gap: 1.25rem; }
+  .headerInner { gap: 1.25rem; }
+  .name { font-size: 1.4rem; }
+  .pStatNum { font-size: 1.4rem; }
+}
