@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
+import Avatar from './Avatar'
 import styles from './LoansPage.module.css'
 import modalStyles from './Modal.module.css'
 import type { Loan, LoanRequest, AppCtx } from '@/types'
@@ -32,18 +33,18 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
       const [reqResult, lentResult, borrowedResult] = await Promise.all([
         supabase
           .from('loan_requests')
-          .select('*, items(id, title, category, user_id), profiles:requester_id(full_name, email, trust_score, avatar_color)')
+          .select('*, items(id, title, category, user_id), profiles:requester_id(full_name, email, trust_score, avatar_color, avatar_url)')
           .eq('status', 'pending'),
 
         supabase
           .from('loans')
-          .select('*, items(id, title, category), borrower:profiles!loans_borrower_id_fkey(full_name, avatar_color)')
+          .select('*, items(id, title, category), borrower:profiles!loans_borrower_id_fkey(full_name, avatar_color, avatar_url)')
           .eq('lender_id', userId)
           .in('status', ['active', 'overdue']),
 
         supabase
           .from('loans')
-          .select('*, items(id, title, category), lender:profiles!loans_lender_id_fkey(full_name, avatar_color)')
+          .select('*, items(id, title, category), lender:profiles!loans_lender_id_fkey(full_name, avatar_color, avatar_url)')
           .eq('borrower_id', userId)
           .in('status', ['active', 'overdue']),
       ])
@@ -108,7 +109,7 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
     // Reload lent list so new loan appears immediately
     const { data } = await supabase
       .from('loans')
-      .select('*, items(id, title, category), borrower:profiles!loans_borrower_id_fkey(full_name, avatar_color)')
+      .select('*, items(id, title, category), borrower:profiles!loans_borrower_id_fkey(full_name, avatar_color, avatar_url)')
       .eq('lender_id', userId)
       .in('status', ['active', 'overdue'])
     if (data) setLent(data as Loan[])
@@ -238,9 +239,12 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
                     {requests.map(req => (
                       <div key={req.id} className={styles.requestCard}>
                         <div className={styles.requestInfo}>
-                          <span className="avatar" style={{ background: req.profiles?.avatar_color || '#C4622D', width: 36, height: 36 }}>
-                            {req.profiles?.full_name?.[0]}
-                          </span>
+                          <Avatar
+                            name={req.profiles?.full_name}
+                            avatarUrl={req.profiles?.avatar_url}
+                            color={req.profiles?.avatar_color}
+                            size={36}
+                          />
                           <div>
                             <p><strong>{req.profiles?.full_name}</strong> wants to borrow <strong>{req.items?.title}</strong></p>
                             <p style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
@@ -287,9 +291,13 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
                               <td><strong>{loan.items?.title}</strong></td>
                               <td>
                                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                  <span className="avatar" style={{ background: person?.avatar_color || '#C4622D', width: 22, height: 22, fontSize: '0.6rem' }}>
-                                    {person?.full_name?.[0]}
-                                  </span>
+                                  <Avatar
+                                    name={person?.full_name}
+                                    avatarUrl={person?.avatar_url}
+                                    color={person?.avatar_color}
+                                    size={22}
+                                    fontSize="0.6rem"
+                                  />
                                   {person?.full_name}
                                 </span>
                               </td>
