@@ -1,4 +1,5 @@
 'use client'
+import { useEffect } from 'react'
 import Avatar from './Avatar'
 import modalStyles from './Modal.module.css'
 import styles from './ItemDetailModal.module.css'
@@ -28,10 +29,16 @@ interface ItemDetailModalProps {
 export default function ItemDetailModal({ item, onClose, onBorrow, onFlag, isOwnItem }: ItemDetailModalProps) {
   const isAvailable = item.status === 'available'
 
+  // Lock body scroll while modal is open
+  useEffect(() => {
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = '' }
+  }, [])
+
   return (
-    <div className={modalStyles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className={`${modalStyles.modal} ${styles.detailModal}`}>
-        <button className={modalStyles.close} onClick={onClose}>✕</button>
+    <div className={styles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className={styles.modal}>
+        <button className={styles.closeBtn} onClick={onClose}>✕</button>
 
         {/* Cover image / emoji hero */}
         <div className={styles.hero} style={{
