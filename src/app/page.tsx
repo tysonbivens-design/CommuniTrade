@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
+import type { User } from '@supabase/supabase-js'
 import Nav from '@/components/Nav'
 import HomePage from '@/components/HomePage'
 import LibraryPage from '@/components/LibraryPage'
@@ -12,21 +13,24 @@ import AdminPage from '@/components/AdminPage'
 import AuthModal from '@/components/AuthModal'
 import Toast from '@/components/Toast'
 import NotifToast from '@/components/NotifToast'
+import type { Profile } from '@/types'
 
-export type Page = 'home' | 'library' | 'barter' | 'loans' | 'notifications' | 'profile' | 'admin'
+// Page type lives in types.ts — import from there, don't re-export here
+import type { Page } from '@/types'
+export type { Page }
 
 // Supabase client created ONCE at module level — never recreated
 const supabase = createBrowserClient()
 
 export default function App() {
-  const [page, setPage]       = useState<Page>('home')
-  const [user, setUser]       = useState<any>(null)
-  const [profile, setProfile] = useState<any>(null)
-  const [showAuth, setShowAuth]   = useState(false)
-  const [authMode, setAuthMode]   = useState<'login' | 'signup'>('signup')
-  const [toast, setToast]         = useState<{ msg: string; type?: 'success' | 'error' } | null>(null)
-  const [notifCount, setNotifCount] = useState(0)
-  const [notifToast, setNotifToast] = useState<{ title: string; type: string } | null>(null)
+  const [page, setPage]         = useState<Page>('home')
+  const [user, setUser]         = useState<User | null>(null)
+  const [profile, setProfile]   = useState<Profile | null>(null)
+  const [showAuth, setShowAuth] = useState(false)
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup')
+  const [toast, setToast]       = useState<{ msg: string; type?: 'success' | 'error' } | null>(null)
+  const [notifCount, setNotifCount]   = useState(0)
+  const [notifToast, setNotifToast]   = useState<{ title: string; type: string } | null>(null)
 
   // ── Auth state ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -52,7 +56,6 @@ export default function App() {
         filter: `user_id=eq.${user.id}`
       }, (payload) => {
         setNotifCount(c => c + 1)
-        // Show floating toast unless user is already on notifications page
         if (page !== 'notifications') {
           const { title, type } = payload.new as { title: string; type: string }
           setNotifToast({ title, type })
@@ -65,7 +68,7 @@ export default function App() {
 
   async function loadProfile(uid: string) {
     const { data } = await supabase.from('profiles').select('*').eq('id', uid).single()
-    setProfile(data)
+    setProfile(data as Profile)
   }
 
   async function loadNotifCount(uid: string) {
@@ -106,7 +109,7 @@ export default function App() {
       {page === 'library'       && <LibraryPage ctx={ctx} />}
       {page === 'barter'        && <BarterPage ctx={ctx} />}
       {page === 'loans'         && <LoansPage ctx={ctx} />}
-      {page === 'notifications' && <NotificationsPage ctx={ctx} onRead={() => loadNotifCount(user?.id)} />}
+      {page === 'notifications' && <NotificationsPage ctx={ctx} onRead={() => loadNotifCount(user?.id ?? '')} />}
       {page === 'profile'       && <ProfilePage ctx={ctx} onProfileUpdate={loadProfile} />}
       {page === 'admin'         && profile?.is_admin && <AdminPage ctx={ctx} />}
 
