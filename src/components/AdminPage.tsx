@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { useSupabase } from '@/lib/useSupabase'
+import { createBrowserClient } from '@/lib/supabase'
 import type { Item, ItemFlag, AppCtx } from '@/types'
 
 const PAGE_SIZE = 15
@@ -16,7 +16,7 @@ interface AdminPageProps {
 
 export default function AdminPage({ ctx }: AdminPageProps) {
   const { showToast } = ctx
-  const supabase = useSupabase()
+  const supabase = createBrowserClient()
   const [flagged, setFlagged] = useState<FlaggedItem[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
