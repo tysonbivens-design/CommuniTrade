@@ -1,7 +1,9 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { useSupabase } from '@/lib/useSupabase'
+import { createBrowserClient } from '@/lib/supabase'
 import ItemCard from './ItemCard'
+import BorrowModal from './BorrowModal'
+import AIUploadModal from './AIUploadModal'
 import styles from './HomePage.module.css'
 import type { Item, AppCtx } from '@/types'
 
@@ -11,15 +13,13 @@ interface HomeStats {
   trades: number
 }
 
-interface HomePageProps {
-  ctx: AppCtx
-}
-
-export default function HomePage({ ctx }: HomePageProps) {
-  const { user, requireAuth, navigate } = ctx
-  const supabase = useSupabase()
+export default function HomePage({ ctx }: { ctx: AppCtx }) {
+  const { user, showToast, requireAuth, navigate } = ctx
+  const supabase = createBrowserClient()
   const [recent, setRecent] = useState<Item[]>([])
   const [stats, setStats] = useState<HomeStats>({ items: 0, members: 0, trades: 0 })
+  const [borrowItem, setBorrowItem] = useState<Item | null>(null)
+  const [showAI, setShowAI] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -87,8 +87,8 @@ export default function HomePage({ ctx }: HomePageProps) {
                 <ItemCard
                   key={item.id}
                   item={item}
-                  onBorrow={() => requireAuth(() => navigate('library'))}
-                  onFlag={() => {}}
+                  onBorrow={(i: Item) => requireAuth(() => setBorrowItem(i))}
+                  onFlag={() => requireAuth(() => navigate('library'))}
                 />
               ))}
             </div>
@@ -98,11 +98,29 @@ export default function HomePage({ ctx }: HomePageProps) {
         <div className={styles.ctaBanner}>
           <h2>Got a shelf full of DVDs or books?</h2>
           <p>Snap a photo and our AI will catalog everything in seconds — then you approve what to share.</p>
-          <button className="btn btn-primary btn-lg" onClick={() => requireAuth(() => navigate('library'))}>
+          <button className="btn btn-primary btn-lg" onClick={() => requireAuth(() => setShowAI(true))}>
             Try AI Catalog Upload →
           </button>
         </div>
       </div>
+
+      {borrowItem && (
+        <BorrowModal
+          item={borrowItem}
+          userId={user!.id}
+          onClose={() => setBorrowItem(null)}
+          onSuccess={() => { setBorrowItem(null); showToast('Borrow request sent! 📬') }}
+          showToast={showToast}
+        />
+      )}
+      {showAI && (
+        <AIUploadModal
+          userId={user!.id}
+          onClose={() => setShowAI(false)}
+          onSuccess={count => { setShowAI(false); showToast(`${count} item${count !== 1 ? 's' : ''} added to your inventory! 🎉`) }}
+          showToast={showToast}
+        />
+      )}
     </div>
   )
 }
