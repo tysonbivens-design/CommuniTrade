@@ -28,7 +28,8 @@
   .modal {
     border-radius: 20px 20px 0 0;
     max-width: 100%;
-    max-height: 92vh;
+    max-height: 85dvh;
+    max-height: min(85dvh, calc(100vh - 120px));
     padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
   }
   .formRow { grid-template-columns: 1fr; }
