@@ -3,7 +3,8 @@
   position: sticky; top: 0; z-index: 100;
   background: var(--bark);
   display: flex; align-items: center; justify-content: space-between;
-  padding: 0 2rem; height: 60px;
+  padding: env(safe-area-inset-top) 2rem 0;
+  height: calc(60px + env(safe-area-inset-top));
   box-shadow: 0 2px 16px rgba(0,0,0,0.2);
 }
 .logo {
@@ -89,7 +90,7 @@
 
 /* ─── SLIDE-OUT DRAWER ────────────────────────────────────────── */
 .drawer {
-  position: fixed; top: 60px; right: 0; bottom: 0;
+  position: fixed; top: calc(60px + env(safe-area-inset-top)); right: 0; bottom: 0;
   width: min(300px, 85vw);
   background: var(--bark); z-index: 95;
   transform: translateX(110%);
