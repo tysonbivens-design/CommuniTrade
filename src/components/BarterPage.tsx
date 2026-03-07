@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
+import Avatar from './Avatar'
 import styles from './BarterPage.module.css'
 import modalStyles from './Modal.module.css'
 import type { BarterPost, BarterMatch, AppCtx } from '@/types'
@@ -45,7 +46,7 @@ export default function BarterPage({ ctx }: { ctx: AppCtx }) {
 
       const { data, error: fetchError } = await supabase
         .from('barter_posts')
-        .select('*, profiles(full_name, trust_score, avatar_color, lat, lng)')
+        .select('*, profiles(full_name, trust_score, avatar_color, avatar_url, lat, lng)')
         .eq('status', 'active')
         .order('created_at', { ascending: false })
 
@@ -335,9 +336,12 @@ function BarterCard({ post, userId, onRemove, onMessage }: {
     <div className={styles.card}>
       <div className={styles.cardHeader}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <span className="avatar" style={{ background: post.profiles?.avatar_color || '#C4622D' }}>
-            {post.profiles?.full_name?.[0] || '?'}
-          </span>
+          <Avatar
+            name={post.profiles?.full_name}
+            avatarUrl={post.profiles?.avatar_url}
+            color={post.profiles?.avatar_color}
+            size={32}
+          />
           <span style={{ fontSize: '0.88rem', fontWeight: 500 }}>{post.profiles?.full_name}</span>
           <span className="trust">⭐{post.profiles?.trust_score?.toFixed(1) || '5.0'}</span>
         </div>
