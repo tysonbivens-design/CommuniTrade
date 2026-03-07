@@ -11,6 +11,17 @@ export const supabaseAdmin = createClient(
 export const FROM = 'CommuniTrade <notifications@communitrade.app>'
 export const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
+/** Escape user-supplied strings before interpolating into email HTML */
+export function esc(s: string | null | undefined): string {
+  if (!s) return ''
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 export async function getProfile(userId: string) {
   const { data } = await supabaseAdmin
     .from('profiles')
@@ -26,6 +37,8 @@ export function emailTemplate({ heading, body, ctaText, ctaUrl }: {
   ctaText: string
   ctaUrl: string
 }) {
+  // heading, ctaText, ctaUrl are always our own strings — safe to interpolate directly.
+  // body is assembled by callers who are responsible for escaping user values with esc().
   return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:0;background:#F5F0E8;font-family:'Helvetica Neue',sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:40px 20px;">
 <table width="580" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
