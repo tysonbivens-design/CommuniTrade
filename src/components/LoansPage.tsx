@@ -271,62 +271,15 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
                 const list = tab === 'lent' ? lent : borrowed
                 if (list.length === 0) return <EmptyState icon={tab === 'lent' ? '📤' : '📥'} text={`Nothing ${tab} yet`} />
                 return (
-                  <div style={{ background: '#fff', borderRadius: 12, border: '1px solid var(--border)', overflow: 'hidden', boxShadow: '0 2px 8px var(--shadow)' }}>
-                    <table className={styles.table}>
-                      <thead>
-                        <tr>
-                          <th>Item</th>
-                          <th>{tab === 'lent' ? 'Borrowed By' : 'Owner'}</th>
-                          <th>Due Back</th>
-                          <th>Status</th>
-                          <th>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {list.map(loan => {
-                          const overdue = isOverdue(loan.due_at)
-                          const person = tab === 'lent' ? loan.borrower : loan.lender
-                          return (
-                            <tr key={loan.id}>
-                              <td><strong>{loan.items?.title}</strong></td>
-                              <td>
-                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                  <Avatar
-                                    name={person?.full_name}
-                                    avatarUrl={person?.avatar_url}
-                                    color={person?.avatar_color}
-                                    size={22}
-                                    fontSize="0.6rem"
-                                  />
-                                  {person?.full_name}
-                                </span>
-                              </td>
-                              <td>{formatDate(loan.due_at)}</td>
-                              <td>
-                                <span className={`badge ${overdue ? 'badge-overdue' : 'badge-loaned'}`}>
-                                  {overdue ? '⚠ Overdue' : 'Active'}
-                                </span>
-                              </td>
-                              <td>
-                                {tab === 'lent' && overdue && (
-                                  <button className="btn btn-primary btn-sm" onClick={() => sendReminder(loan)}>Send Reminder</button>
-                                )}
-                                {tab === 'lent' && !overdue && (
-                                  <button className="btn btn-outline btn-sm" onClick={() => lenderConfirmReturn(loan)}>Confirm Return</button>
-                                )}
-                                {tab === 'borrowed' && !loan.borrower_confirmed_return && (
-                                  <button className="btn btn-outline btn-sm" onClick={() => borrowerMarkReturned(loan)}>I've Returned It</button>
-                                )}
-                                {tab === 'borrowed' && loan.borrower_confirmed_return && (
-                                  <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Waiting for lender ⏳</span>
-                                )}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                  <LoanList
+                    loans={list}
+                    tab={tab as 'lent' | 'borrowed'}
+                    onConfirmReturn={lenderConfirmReturn}
+                    onMarkReturned={borrowerMarkReturned}
+                    onSendReminder={sendReminder}
+                    isOverdue={isOverdue}
+                    formatDate={formatDate}
+                  />
                 )
               })()}
             </>
@@ -345,6 +298,115 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
       )}
     </div>
   )
+}
+
+// ─── Responsive Loan List ─────────────────────────────────────────────────────
+// Table on desktop, stacked cards on mobile
+
+interface LoanListProps {
+  loans: Loan[]
+  tab: 'lent' | 'borrowed'
+  onConfirmReturn: (loan: Loan) => void
+  onMarkReturned: (loan: Loan) => void
+  onSendReminder: (loan: Loan) => void
+  isOverdue: (dueAt: string) => boolean
+  formatDate: (d: string) => string
+}
+
+function LoanList({ loans, tab, onConfirmReturn, onMarkReturned, onSendReminder, isOverdue, formatDate }: LoanListProps) {
+  return (
+    <>
+      {/* ── Desktop table ── */}
+      <div className={styles.tableWrap}>
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>{tab === 'lent' ? 'Borrowed By' : 'Owner'}</th>
+              <th>Due Back</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loans.map(loan => {
+              const overdue = isOverdue(loan.due_at)
+              const person = tab === 'lent' ? loan.borrower : loan.lender
+              return (
+                <tr key={loan.id}>
+                  <td><strong>{loan.items?.title}</strong></td>
+                  <td>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Avatar name={person?.full_name} avatarUrl={person?.avatar_url} color={person?.avatar_color} size={22} fontSize="0.6rem" />
+                      {person?.full_name}
+                    </span>
+                  </td>
+                  <td>{formatDate(loan.due_at)}</td>
+                  <td>
+                    <span className={`badge ${overdue ? 'badge-overdue' : 'badge-loaned'}`}>
+                      {overdue ? '⚠ Overdue' : 'Active'}
+                    </span>
+                  </td>
+                  <td>
+                    <LoanAction loan={loan} tab={tab} overdue={overdue} onConfirmReturn={onConfirmReturn} onMarkReturned={onMarkReturned} onSendReminder={onSendReminder} />
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ── Mobile cards ── */}
+      <div className={styles.loanCards}>
+        {loans.map(loan => {
+          const overdue = isOverdue(loan.due_at)
+          const person = tab === 'lent' ? loan.borrower : loan.lender
+          return (
+            <div key={loan.id} className={`${styles.loanCard} ${overdue ? styles.loanCardOverdue : ''}`}>
+              <div className={styles.loanCardTop}>
+                <strong style={{ fontSize: '0.95rem' }}>{loan.items?.title}</strong>
+                <span className={`badge ${overdue ? 'badge-overdue' : 'badge-loaned'}`}>
+                  {overdue ? '⚠ Overdue' : 'Active'}
+                </span>
+              </div>
+              <div className={styles.loanCardMeta}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <Avatar name={person?.full_name} avatarUrl={person?.avatar_url} color={person?.avatar_color} size={20} fontSize="0.58rem" />
+                  <span style={{ fontSize: '0.83rem', color: 'var(--muted)' }}>
+                    {tab === 'lent' ? 'Borrowed by' : 'Owned by'} {person?.full_name}
+                  </span>
+                </span>
+                <span style={{ fontSize: '0.82rem', color: overdue ? '#C62828' : 'var(--muted)' }}>
+                  Due {formatDate(loan.due_at)}
+                </span>
+              </div>
+              <div style={{ marginTop: '0.75rem' }}>
+                <LoanAction loan={loan} tab={tab} overdue={overdue} onConfirmReturn={onConfirmReturn} onMarkReturned={onMarkReturned} onSendReminder={onSendReminder} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </>
+  )
+}
+
+interface LoanActionProps {
+  loan: Loan
+  tab: 'lent' | 'borrowed'
+  overdue: boolean
+  onConfirmReturn: (loan: Loan) => void
+  onMarkReturned: (loan: Loan) => void
+  onSendReminder: (loan: Loan) => void
+}
+
+function LoanAction({ loan, tab, overdue, onConfirmReturn, onMarkReturned, onSendReminder }: LoanActionProps) {
+  if (tab === 'lent' && overdue) return <button className="btn btn-primary btn-sm" onClick={() => onSendReminder(loan)}>Send Reminder</button>
+  if (tab === 'lent' && !overdue) return <button className="btn btn-outline btn-sm" onClick={() => onConfirmReturn(loan)}>Confirm Return</button>
+  if (tab === 'borrowed' && !loan.borrower_confirmed_return) return <button className="btn btn-outline btn-sm" onClick={() => onMarkReturned(loan)}>I've Returned It</button>
+  if (tab === 'borrowed' && loan.borrower_confirmed_return) return <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Waiting for lender ⏳</span>
+  return null
 }
 
 function EmptyState({ icon, text }: { icon: string; text: string }) {
