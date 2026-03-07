@@ -2,11 +2,52 @@
 .searchWrap { flex: 1; min-width: 220px; position: relative; }
 .searchIcon { position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); pointer-events: none; }
 .searchInput { padding-left: 2.5rem !important; }
+
+/* ─── Filter pills row ────────────────────────────────────────── */
+.filtersRow {
+  display: flex; flex-direction: column; gap: 0.6rem;
+  margin-bottom: 1.5rem;
+}
+.filterGroup {
+  display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center;
+}
+.filterPill {
+  padding: 0.35rem 0.85rem; border-radius: 20px; font-size: 0.82rem; font-weight: 500;
+  border: 1.5px solid var(--border); background: #fff; color: var(--muted);
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+  font-family: 'DM Sans', sans-serif;
+  /* Larger tap target on mobile */
+  min-height: 36px; display: inline-flex; align-items: center;
+}
+.filterPill:hover { border-color: var(--rust); color: var(--rust); }
+.filterPillActive {
+  background: var(--bark); border-color: var(--bark); color: #fff;
+}
+.filterPillActive:hover { background: var(--bark-light); border-color: var(--bark-light); color: #fff; }
+.clearFilters {
+  padding: 0.35rem 0.85rem; border-radius: 20px; font-size: 0.8rem; font-weight: 500;
+  border: none; background: none; color: var(--muted); cursor: pointer;
+  transition: color 0.15s; white-space: nowrap; font-family: 'DM Sans', sans-serif;
+  text-decoration: underline; align-self: flex-start;
+}
+.clearFilters:hover { color: var(--rust); }
+
+/* ─── Loading / empty states ──────────────────────────────────── */
 .loadingGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1.25rem; }
-.skeleton { height: 280px; background: linear-gradient(90deg, #ede8e0 25%, #e3ddd5 50%, #ede8e0 75%); border-radius: 12px; background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+.skeleton {
+  height: 280px;
+  background: linear-gradient(90deg, #ede8e0 25%, #e3ddd5 50%, #ede8e0 75%);
+  border-radius: 12px; background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
 @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 .empty { text-align: center; padding: 4rem 2rem; }
 .emptyIcon { font-size: 3.5rem; margin-bottom: 1rem; }
 .empty h3 { font-family: 'Fraunces', serif; font-size: 1.3rem; margin-bottom: 0.5rem; }
 .empty p { color: var(--muted); margin-bottom: 1.5rem; }
 .aiSection { margin-top: 4rem; padding-top: 3rem; border-top: 1px solid var(--border); }
+
+/* ─── Mobile ──────────────────────────────────────────────────── */
+@media (max-width: 500px) {
+  .filterPill { font-size: 0.78rem; padding: 0.3rem 0.7rem; }
+}
