@@ -283,7 +283,7 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
               <div className="grid-4">
                 {items.map(item => (
                   <div key={item.id} style={{ position: 'relative' }}>
-                    <ItemCard item={item} onBorrow={() => {}} onFlag={() => {}} />
+                    <ItemCard item={item} onBorrow={() => {}} onFlag={() => {}} isOwnItem />
 
                     <div style={{
                       position: 'absolute', top: '0.5rem', left: '0.5rem',
