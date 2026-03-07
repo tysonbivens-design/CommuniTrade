@@ -21,4 +21,15 @@
 .toggle button { background: none; border: none; color: var(--rust); cursor: pointer; font-weight: 500; }
 .toggle button:hover { text-decoration: underline; }
 .formRow { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
-@media (max-width: 500px) { .formRow { grid-template-columns: 1fr; } }
+
+/* Mobile: snap to bottom, rounded top corners only */
+@media (max-width: 600px) {
+  .overlay { align-items: flex-end; padding: 0; }
+  .modal {
+    border-radius: 20px 20px 0 0;
+    max-width: 100%;
+    max-height: 92vh;
+    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+  }
+  .formRow { grid-template-columns: 1fr; }
+}
