@@ -3,14 +3,11 @@ import { useState, useEffect } from 'react'
 import { useSupabase } from '@/lib/useSupabase'
 import type { Notification, AppCtx } from '@/types'
 
+const PAGE_SIZE = 25
+
 const TYPE_ICONS: Record<Notification['type'], string> = {
-  loan_request: '📬',
-  loan_approved: '✅',
-  loan_due: '⏰',
-  loan_overdue: '🚨',
-  barter_match: '🤝',
-  review: '⭐',
-  flag: '🚩',
+  loan_request: '📬', loan_approved: '✅', loan_due: '⏰', loan_overdue: '🚨',
+  barter_match: '🤝', review: '⭐', flag: '🚩',
 }
 
 interface NotificationsPageProps {
@@ -31,39 +28,50 @@ export default function NotificationsPage({ ctx, onRead }: NotificationsPageProp
   const supabase = useSupabase()
   const [notifs, setNotifs] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [offset, setOffset] = useState(0)
 
   const userId = user?.id ?? null
 
   useEffect(() => {
     if (!userId) return
+    loadPage(0, true)
+  }, [userId])
 
-    async function load() {
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(50)
+  async function loadPage(fromOffset: number, initial = false) {
+    if (initial) setLoading(true)
+    else setLoadingMore(true)
 
-      if (!error) setNotifs((data as Notification[]) || [])
-      setLoading(false)
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .range(fromOffset, fromOffset + PAGE_SIZE - 1)
 
-      // Mark all as read
-      await supabase
-        .from('notifications')
-        .update({ read: true })
-        .eq('user_id', userId)
-        .eq('read', false)
-
-      onRead()
+    if (!error && data) {
+      const newNotifs = data as Notification[]
+      setNotifs(prev => initial ? newNotifs : [...prev, ...newNotifs])
+      setHasMore(newNotifs.length === PAGE_SIZE)
+      setOffset(fromOffset + newNotifs.length)
     }
 
-    load()
-  }, [userId])
+    if (initial) {
+      setLoading(false)
+      // Mark all as read after initial load
+      await supabase.from('notifications').update({ read: true }).eq('user_id', userId!).eq('read', false)
+      onRead()
+    } else {
+      setLoadingMore(false)
+    }
+  }
 
   async function clearAll() {
     await supabase.from('notifications').delete().eq('user_id', userId!)
     setNotifs([])
+    setHasMore(false)
+    setOffset(0)
     onRead()
     showToast('Notifications cleared')
   }
@@ -93,7 +101,7 @@ export default function NotificationsPage({ ctx, onRead }: NotificationsPageProp
           </div>
 
           {loading ? (
-            <p style={{ color: 'var(--muted)' }}>Loading…</p>
+            <p style={{ color: 'var(--muted)', marginTop: '1.5rem' }}>Loading…</p>
           ) : notifs.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--muted)' }}>
               <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔔</div>
@@ -101,35 +109,50 @@ export default function NotificationsPage({ ctx, onRead }: NotificationsPageProp
               <p>Notifications will appear here as your community activity grows.</p>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-              {notifs.map(n => (
-                <div key={n.id} style={{
-                  background: '#fff', borderRadius: 10, padding: '1rem 1.25rem',
-                  border: `1px solid ${n.read ? 'var(--border)' : 'var(--rust)'}`,
-                  borderLeft: n.read ? '1px solid var(--border)' : '4px solid var(--rust)',
-                  display: 'flex', gap: '1rem', alignItems: 'flex-start',
-                }}>
-                  <span style={{ fontSize: '1.5rem', flexShrink: 0 }}>{TYPE_ICONS[n.type] || '🔔'}</span>
-                  <div style={{ flex: 1 }}>
-                    <p style={{ fontSize: '0.88rem', fontWeight: 500, marginBottom: '0.15rem' }}>{n.title}</p>
-                    <p style={{ fontSize: '0.85rem', color: 'var(--muted)', lineHeight: 1.5 }}>{n.body}</p>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.4rem' }}>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{timeAgo(n.created_at)}</p>
-                      {(n.type === 'loan_request' || n.type === 'loan_approved' || n.type === 'loan_due' || n.type === 'loan_overdue') && (
-                        <button className="btn btn-outline btn-sm" onClick={() => navigate('loans')} style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem' }}>
-                          View Loans →
-                        </button>
-                      )}
-                      {(n.type === 'barter_match') && (
-                        <button className="btn btn-outline btn-sm" onClick={() => navigate('barter')} style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem' }}>
-                          View Match →
-                        </button>
-                      )}
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '1.5rem' }}>
+                {notifs.map(n => (
+                  <div key={n.id} style={{
+                    background: '#fff', borderRadius: 10, padding: '1rem 1.25rem',
+                    border: `1px solid ${n.read ? 'var(--border)' : 'var(--rust)'}`,
+                    borderLeft: n.read ? '1px solid var(--border)' : '4px solid var(--rust)',
+                    display: 'flex', gap: '1rem', alignItems: 'flex-start',
+                  }}>
+                    <span style={{ fontSize: '1.5rem', flexShrink: 0 }}>{TYPE_ICONS[n.type] || '🔔'}</span>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: '0.88rem', fontWeight: 500, marginBottom: '0.15rem' }}>{n.title}</p>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--muted)', lineHeight: 1.5 }}>{n.body}</p>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.4rem' }}>
+                        <p style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{timeAgo(n.created_at)}</p>
+                        {(n.type === 'loan_request' || n.type === 'loan_approved' || n.type === 'loan_due' || n.type === 'loan_overdue') && (
+                          <button className="btn btn-outline btn-sm" onClick={() => navigate('loans')} style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem' }}>
+                            View Loans →
+                          </button>
+                        )}
+                        {n.type === 'barter_match' && (
+                          <button className="btn btn-outline btn-sm" onClick={() => navigate('barter')} style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem' }}>
+                            View Match →
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
+                ))}
+              </div>
+
+              {hasMore && (
+                <div style={{ textAlign: 'center', marginTop: '2rem' }}>
+                  <button
+                    className="btn btn-outline btn-lg"
+                    onClick={() => loadPage(offset)}
+                    disabled={loadingMore}
+                    style={{ minWidth: 200, padding: '0.9rem 2rem' }}
+                  >
+                    {loadingMore ? <span className="spinner" style={{ borderColor: 'rgba(0,0,0,0.2)', borderTopColor: 'var(--bark)' }} /> : 'Load More'}
+                  </button>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </div>
       </div>
