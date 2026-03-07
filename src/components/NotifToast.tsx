@@ -60,7 +60,7 @@ export default function NotifToast({ title, type, onView, onDismiss }: Props) {
   return (
     <div style={{
       position: 'fixed',
-      bottom: '5.5rem',
+      bottom: 'calc(var(--bottom-bar-height, 56px) + env(safe-area-inset-bottom, 0px) + 0.75rem)',
       left: '50%',
       transform: `translateX(-50%) translateY(${visible ? '0' : '20px'})`,
       opacity: visible ? 1 : 0,
