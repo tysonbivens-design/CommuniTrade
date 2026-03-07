@@ -482,7 +482,7 @@ function AddBarterModal({ userId, onClose, onSuccess, showToast }: AddBarterModa
       // Trigger matching (fire-and-forget)
       fetch('/api/barter-match', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId: data.id }),
+        body: JSON.stringify({ postId: data.id, userId }),
       }).catch(() => {})
 
       onSuccess()
