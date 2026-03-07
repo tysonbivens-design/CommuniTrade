@@ -111,12 +111,13 @@
   .modal {
     border-radius: 20px 20px 0 0;
     max-width: 100%;
-    /* full height minus top safe area — hero + content + actions all visible */
-    max-height: calc(100vh - env(safe-area-inset-top, 44px) - 20px);
+    /* dvh = dynamic viewport height, accounts for iOS Safari address bar */
+    max-height: 85dvh;
+    /* fallback for older browsers */
+    max-height: min(85dvh, calc(100vh - 120px));
   }
   .hero { height: 160px; flex-shrink: 0; }
   .body {
-    /* ensure bottom actions clear the home indicator */
     padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
   }
 }
