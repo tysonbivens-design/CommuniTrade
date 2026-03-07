@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react'
 import { useSupabase } from '@/lib/useSupabase'
 import type { Item, ItemFlag, AppCtx } from '@/types'
 
+const PAGE_SIZE = 15
+
 interface FlaggedItem extends Omit<Item, 'profiles'> {
   item_flags: ItemFlag[]
   profiles: { full_name: string | null; email: string | null; trust_score: number; avatar_color: string | null; lat: number | null; lng: number | null }
@@ -17,18 +19,32 @@ export default function AdminPage({ ctx }: AdminPageProps) {
   const supabase = useSupabase()
   const [flagged, setFlagged] = useState<FlaggedItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [offset, setOffset] = useState(0)
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { loadPage(0, true) }, [])
 
-  async function load() {
+  async function loadPage(fromOffset: number, initial = false) {
+    if (initial) setLoading(true)
+    else setLoadingMore(true)
+
     const { data, error } = await supabase
       .from('items')
       .select('*, profiles(full_name, email), item_flags(*)')
       .eq('flagged', true)
       .order('created_at', { ascending: false })
+      .range(fromOffset, fromOffset + PAGE_SIZE - 1)
 
-    if (!error) setFlagged((data as FlaggedItem[]) || [])
-    setLoading(false)
+    if (!error && data) {
+      const newItems = data as FlaggedItem[]
+      setFlagged(prev => initial ? newItems : [...prev, ...newItems])
+      setHasMore(newItems.length === PAGE_SIZE)
+      setOffset(fromOffset + newItems.length)
+    }
+
+    if (initial) setLoading(false)
+    else setLoadingMore(false)
   }
 
   async function resolve(item: FlaggedItem, action: 'keep' | 'remove') {
@@ -42,7 +58,8 @@ export default function AdminPage({ ctx }: AdminPageProps) {
       await supabase.from('item_flags').update({ resolved: true }).eq('item_id', item.id)
       showToast('Item cleared — flags resolved')
     }
-    load()
+    // Remove from local state immediately — no need to refetch
+    setFlagged(prev => prev.filter(f => f.id !== item.id))
   }
 
   return (
@@ -61,25 +78,40 @@ export default function AdminPage({ ctx }: AdminPageProps) {
               <p>The community is keeping things tidy!</p>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {flagged.map(item => (
-                <div key={item.id} style={{ background: '#fff', border: '2px solid #FEECEC', borderRadius: 12, padding: '1.25rem', boxShadow: '0 2px 8px var(--shadow)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
-                    <div>
-                      <h3 style={{ fontFamily: 'Fraunces, serif', marginBottom: '0.25rem' }}>{item.title}</h3>
-                      <p style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>By {item.profiles?.full_name} · {item.category}</p>
-                      <p style={{ fontSize: '0.82rem', color: '#C62828', marginTop: '0.5rem' }}>
-                        🚩 {item.item_flags?.length || 0} flags: {item.item_flags?.map(f => f.reason).join(', ')}
-                      </p>
-                    </div>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <button className="btn btn-outline btn-sm" onClick={() => resolve(item, 'keep')}>✅ Keep (clear flags)</button>
-                      <button className="btn btn-sm" style={{ background: '#C62828', color: '#fff' }} onClick={() => resolve(item, 'remove')}>🗑 Remove</button>
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {flagged.map(item => (
+                  <div key={item.id} style={{ background: '#fff', border: '2px solid #FEECEC', borderRadius: 12, padding: '1.25rem', boxShadow: '0 2px 8px var(--shadow)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
+                      <div>
+                        <h3 style={{ fontFamily: 'Fraunces, serif', marginBottom: '0.25rem' }}>{item.title}</h3>
+                        <p style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>By {item.profiles?.full_name} · {item.category}</p>
+                        <p style={{ fontSize: '0.82rem', color: '#C62828', marginTop: '0.5rem' }}>
+                          🚩 {item.item_flags?.length || 0} flags: {item.item_flags?.map(f => f.reason).join(', ')}
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <button className="btn btn-outline btn-sm" onClick={() => resolve(item, 'keep')}>✅ Keep (clear flags)</button>
+                        <button className="btn btn-sm" style={{ background: '#C62828', color: '#fff' }} onClick={() => resolve(item, 'remove')}>🗑 Remove</button>
+                      </div>
                     </div>
                   </div>
+                ))}
+              </div>
+
+              {hasMore && (
+                <div style={{ textAlign: 'center', marginTop: '2rem' }}>
+                  <button
+                    className="btn btn-outline btn-lg"
+                    onClick={() => loadPage(offset)}
+                    disabled={loadingMore}
+                    style={{ minWidth: 200, padding: '0.9rem 2rem' }}
+                  >
+                    {loadingMore ? <span className="spinner" style={{ borderColor: 'rgba(0,0,0,0.2)', borderTopColor: 'var(--bark)' }} /> : 'Load More'}
+                  </button>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </div>
       </div>
