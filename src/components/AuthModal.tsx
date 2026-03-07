@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
 import styles from './Modal.module.css'
+import { useScrollLock } from '@/lib/useScrollLock'
 import type { AppCtx } from '@/types'
 
 interface AuthModalProps {
@@ -19,6 +20,7 @@ interface AuthForm {
 }
 
 export default function AuthModal({ mode, onClose, onSuccess, showToast }: AuthModalProps) {
+  useScrollLock()
   const supabase = createBrowserClient()
   const [isLogin, setIsLogin] = useState(mode === 'login')
   const [loading, setLoading] = useState(false)
@@ -104,8 +106,7 @@ export default function AuthModal({ mode, onClose, onSuccess, showToast }: AuthM
                 • You participate in trades, loans, and barters at your own risk. Always meet in safe, public places.<br />
                 • You will not use the platform to scam, defraud, or harm other members.<br />
                 • Listings that are inaccurate, unavailable, or abusive may be removed.<br />
-                • CommuniTrade is not liable for lost, stolen, or damaged items, or for disputes between members.<br />
-                • The use of CommuniTrade for the trade of illicit substances, services, or products is strictly prohibited and will result in immediate removal.
+                • CommuniTrade is not liable for lost, stolen, or damaged items, or for disputes between members.
               </div>
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--bark)' }}>
                 <input
