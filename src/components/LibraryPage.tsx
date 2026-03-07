@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
 import ItemCard from './ItemCard'
 import BorrowModal from './BorrowModal'
@@ -9,7 +9,7 @@ import modalStyles from './Modal.module.css'
 import type { Item, AppCtx, ItemCategory, OfferType, Condition } from '@/types'
 
 const PAGE_SIZE = 20
-const DB_FETCH_LIMIT = 500 // fetch generously so client-side radius filter has enough to work with
+const DB_FETCH_LIMIT = 500
 
 const ITEM_CATEGORIES: ItemCategory[] = ['Book', 'DVD', 'VHS', 'CD', 'Game', 'Tool', 'Home Good', 'Other']
 const CAT_LABELS: Record<string, string> = {
@@ -17,6 +17,11 @@ const CAT_LABELS: Record<string, string> = {
   Book: '📚 Books', DVD: '🎬 DVDs', VHS: '📼 VHS', CD: '🎵 CDs',
   Game: '🎲 Games', Tool: '🔧 Tools', 'Home Good': '🏠 Home Goods', Other: '📦 Other',
 }
+const OFFER_LABELS: Record<string, string> = {
+  '': 'Any Type', lend: '🤝 Lend', swap: '🔄 Swap', barter: '⚖️ Barter', free: '🎁 Free',
+}
+// Categories where genre filtering makes sense
+const GENRE_CATEGORIES = new Set(['Book', 'DVD', 'VHS', 'CD'])
 
 function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 3958.8
@@ -31,16 +36,19 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
   const { user, profile, showToast, requireAuth } = ctx
   const supabase = createBrowserClient()
 
-  // All filtered results from DB (radius-filtered client-side)
   const [allItems, setAllItems] = useState<Item[]>([])
-  // How many we're currently showing
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
-
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Filters
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [category, setCategory] = useState('')
+  const [offerType, setOfferType] = useState('')
+  const [genre, setGenre] = useState('')
+
+  // Modals
   const [showAdd, setShowAdd] = useState(false)
   const [borrowItem, setBorrowItem] = useState<Item | null>(null)
   const [flagItem, setFlagItem] = useState<Item | null>(null)
@@ -51,8 +59,11 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
     return () => clearTimeout(timer)
   }, [search])
 
-  // Reset visible count when filters change
-  useEffect(() => { setVisibleCount(PAGE_SIZE) }, [category, debouncedSearch])
+  // Reset pagination and genre when top-level filters change
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE)
+    setGenre('')
+  }, [category, debouncedSearch, offerType])
 
   const userId = user?.id ?? null
   const userLat = profile?.lat ?? null
@@ -75,7 +86,12 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
         .limit(DB_FETCH_LIMIT)
 
       if (category) q = q.eq('category', category)
-      if (debouncedSearch) q = q.ilike('title', `%${debouncedSearch}%`)
+      if (offerType) q = q.eq('offer_type', offerType)
+
+      // Search both title and author_creator
+      if (debouncedSearch) {
+        q = q.or(`title.ilike.%${debouncedSearch}%,author_creator.ilike.%${debouncedSearch}%`)
+      }
 
       const { data, error: fetchError } = await q
       if (cancelled) return
@@ -87,6 +103,8 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
       }
 
       let results = (data as Item[]) || []
+
+      // Client-side radius filter
       if (userId && userLat && userLng && radiusMiles) {
         results = results.filter(item => {
           if (item.user_id === userId) return true
@@ -101,11 +119,31 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
 
     loadItems()
     return () => { cancelled = true }
-  }, [category, debouncedSearch, userId, userLat, userLng, radiusMiles])
+  }, [category, offerType, debouncedSearch, userId, userLat, userLng, radiusMiles])
 
-  const visibleItems = allItems.slice(0, visibleCount)
-  const hasMore = visibleCount < allItems.length
+  // Derive available genres from current result set (only for genre-relevant categories)
+  const availableGenres = useMemo(() => {
+    if (!category || !GENRE_CATEGORIES.has(category)) return []
+    const genres = new Set<string>()
+    allItems.forEach(item => {
+      const g = item.metadata?.genre
+      if (g) genres.add(g)
+    })
+    return Array.from(genres).sort()
+  }, [allItems, category])
+
+  // Client-side genre filter (applied on top of DB results)
+  const filteredItems = useMemo(() => {
+    if (!genre) return allItems
+    return allItems.filter(item => item.metadata?.genre === genre)
+  }, [allItems, genre])
+
+  const visibleItems = filteredItems.slice(0, visibleCount)
+  const hasMore = visibleCount < filteredItems.length
   const radiusNote = userId && radiusMiles ? `Showing items within ${radiusMiles} miles of you` : null
+
+  // Active filter count for the clear button
+  const activeFilterCount = [offerType, genre].filter(Boolean).length
 
   return (
     <div style={{ position: 'relative', zIndex: 1 }}>
@@ -114,12 +152,13 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
           <h1 className="section-title">Community Library</h1>
           <p className="section-subtitle">{radiusNote ?? 'Browse, borrow, and lend with your neighbors'}</p>
 
+          {/* Search + Add */}
           <div className={styles.searchRow}>
             <div className={styles.searchWrap}>
               <span className={styles.searchIcon}>🔍</span>
               <input
                 className={`input ${styles.searchInput}`}
-                placeholder="Search titles, authors…"
+                placeholder="Search titles, authors, directors…"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
@@ -129,12 +168,60 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
             </button>
           </div>
 
+          {/* Category tabs */}
           <div className="tabs">
             {Object.entries(CAT_LABELS).map(([val, label]) => (
               <button key={val} className={`tab ${category === val ? 'active' : ''}`} onClick={() => setCategory(val)}>
                 {label}
               </button>
             ))}
+          </div>
+
+          {/* Secondary filters row */}
+          <div className={styles.filtersRow}>
+            {/* Offer type pills */}
+            <div className={styles.filterGroup}>
+              {Object.entries(OFFER_LABELS).map(([val, label]) => (
+                <button
+                  key={val}
+                  className={`${styles.filterPill} ${offerType === val ? styles.filterPillActive : ''}`}
+                  onClick={() => setOfferType(val)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Genre pills — only shown when a genre-relevant category is selected and genres exist */}
+            {availableGenres.length > 0 && (
+              <div className={styles.filterGroup}>
+                <button
+                  className={`${styles.filterPill} ${genre === '' ? styles.filterPillActive : ''}`}
+                  onClick={() => setGenre('')}
+                >
+                  All Genres
+                </button>
+                {availableGenres.map(g => (
+                  <button
+                    key={g}
+                    className={`${styles.filterPill} ${genre === g ? styles.filterPillActive : ''}`}
+                    onClick={() => { setGenre(g); setVisibleCount(PAGE_SIZE) }}
+                  >
+                    {g}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Clear filters */}
+            {activeFilterCount > 0 && (
+              <button
+                className={styles.clearFilters}
+                onClick={() => { setOfferType(''); setGenre('') }}
+              >
+                ✕ Clear filters
+              </button>
+            )}
           </div>
 
           {loading ? (
@@ -147,18 +234,26 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
               <h3>Something went wrong</h3>
               <p>{error}</p>
             </div>
-          ) : allItems.length === 0 ? (
+          ) : filteredItems.length === 0 ? (
             <div className={styles.empty}>
               <div className={styles.emptyIcon}>📚</div>
-              <h3>Nothing here yet</h3>
+              <h3>Nothing matches</h3>
               <p>
-                {userId && radiusMiles
-                  ? `No items within ${radiusMiles} miles. Try increasing your radius by clicking the 📍 pill in the nav.`
-                  : 'Be the first to add something to your community!'}
+                {activeFilterCount > 0
+                  ? 'Try clearing some filters to see more results.'
+                  : userId && radiusMiles
+                    ? `No items within ${radiusMiles} miles. Try increasing your radius by clicking the 📍 pill in the nav.`
+                    : 'Be the first to add something to your community!'}
               </p>
-              <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>
-                Add the first item
-              </button>
+              {activeFilterCount > 0 ? (
+                <button className="btn btn-outline" onClick={() => { setOfferType(''); setGenre('') }}>
+                  Clear Filters
+                </button>
+              ) : (
+                <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>
+                  Add the first item
+                </button>
+              )}
             </div>
           ) : (
             <>
@@ -180,7 +275,7 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
                     onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
                     style={{ minWidth: 200, padding: '0.9rem 2rem' }}
                   >
-                    Load More · {allItems.length - visibleCount} remaining
+                    Load More · {filteredItems.length - visibleCount} remaining
                   </button>
                 </div>
               )}
