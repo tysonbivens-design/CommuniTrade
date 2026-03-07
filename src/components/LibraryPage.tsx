@@ -8,6 +8,9 @@ import styles from './LibraryPage.module.css'
 import modalStyles from './Modal.module.css'
 import type { Item, AppCtx, ItemCategory, OfferType, Condition } from '@/types'
 
+const PAGE_SIZE = 20
+const DB_FETCH_LIMIT = 500 // fetch generously so client-side radius filter has enough to work with
+
 const ITEM_CATEGORIES: ItemCategory[] = ['Book', 'DVD', 'VHS', 'CD', 'Game', 'Tool', 'Home Good', 'Other']
 const CAT_LABELS: Record<string, string> = {
   '': 'All Items',
@@ -28,7 +31,11 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
   const { user, profile, showToast, requireAuth } = ctx
   const supabase = createBrowserClient()
 
-  const [items, setItems] = useState<Item[]>([])
+  // All filtered results from DB (radius-filtered client-side)
+  const [allItems, setAllItems] = useState<Item[]>([])
+  // How many we're currently showing
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -43,6 +50,9 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
     const timer = setTimeout(() => setDebouncedSearch(search), 300)
     return () => clearTimeout(timer)
   }, [search])
+
+  // Reset visible count when filters change
+  useEffect(() => { setVisibleCount(PAGE_SIZE) }, [category, debouncedSearch])
 
   const userId = user?.id ?? null
   const userLat = profile?.lat ?? null
@@ -62,6 +72,7 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
         .eq('flagged', false)
         .eq('archived', false)
         .order('created_at', { ascending: false })
+        .limit(DB_FETCH_LIMIT)
 
       if (category) q = q.eq('category', category)
       if (debouncedSearch) q = q.ilike('title', `%${debouncedSearch}%`)
@@ -84,7 +95,7 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
         })
       }
 
-      setItems(results)
+      setAllItems(results)
       setLoading(false)
     }
 
@@ -92,6 +103,8 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
     return () => { cancelled = true }
   }, [category, debouncedSearch, userId, userLat, userLng, radiusMiles])
 
+  const visibleItems = allItems.slice(0, visibleCount)
+  const hasMore = visibleCount < allItems.length
   const radiusNote = userId && radiusMiles ? `Showing items within ${radiusMiles} miles of you` : null
 
   return (
@@ -134,7 +147,7 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
               <h3>Something went wrong</h3>
               <p>{error}</p>
             </div>
-          ) : items.length === 0 ? (
+          ) : allItems.length === 0 ? (
             <div className={styles.empty}>
               <div className={styles.emptyIcon}>📚</div>
               <h3>Nothing here yet</h3>
@@ -148,16 +161,30 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
               </button>
             </div>
           ) : (
-            <div className="grid-4">
-              {items.map(item => (
-                <ItemCard
-                  key={item.id}
-                  item={item}
-                  onBorrow={(i: Item) => requireAuth(() => setBorrowItem(i))}
-                  onFlag={(i: Item) => requireAuth(() => setFlagItem(i))}
-                />
-              ))}
-            </div>
+            <>
+              <div className="grid-4">
+                {visibleItems.map(item => (
+                  <ItemCard
+                    key={item.id}
+                    item={item}
+                    onBorrow={(i: Item) => requireAuth(() => setBorrowItem(i))}
+                    onFlag={(i: Item) => requireAuth(() => setFlagItem(i))}
+                  />
+                ))}
+              </div>
+
+              {hasMore && (
+                <div style={{ textAlign: 'center', marginTop: '2.5rem' }}>
+                  <button
+                    className="btn btn-outline btn-lg"
+                    onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
+                    style={{ minWidth: 200, padding: '0.9rem 2rem' }}
+                  >
+                    Load More · {allItems.length - visibleCount} remaining
+                  </button>
+                </div>
+              )}
+            </>
           )}
 
           <div className={styles.aiSection}>
