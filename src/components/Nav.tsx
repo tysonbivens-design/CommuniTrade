@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
 import type { User } from '@supabase/supabase-js'
 import type { Profile, Page } from '@/types'
+import Avatar from './Avatar'
 import styles from './Nav.module.css'
 
 // ─── Location helpers ──────────────────────────────────────────────────────
@@ -198,9 +199,13 @@ export default function Nav({ page, setPage, user, profile, notifCount, onSignIn
             {user ? (
               <div className={styles.userMenu}>
                 <button className={styles.userBtn} onClick={() => navigate('profile')}>
-                  <span className={styles.avatarSmall} style={{ background: profile?.avatar_color || '#C4622D' }}>
-                    {profile?.full_name?.[0] || 'U'}
-                  </span>
+                  <Avatar
+                    name={profile?.full_name}
+                    avatarUrl={profile?.avatar_url}
+                    color={profile?.avatar_color}
+                    size={22}
+                    fontSize="0.7rem"
+                  />
                   {profile?.full_name?.split(' ')[0] || 'Account'}
                 </button>
                 <button className={`${styles.navBtn} ${styles.outline}`} onClick={onSignOut}>Sign out</button>
@@ -234,9 +239,12 @@ export default function Nav({ page, setPage, user, profile, notifCount, onSignIn
         {/* User row */}
         {user && (
           <div className={styles.drawerUserRow}>
-            <span className={styles.drawerAvatarLg} style={{ background: profile?.avatar_color || '#C4622D' }}>
-              {profile?.full_name?.[0] || 'U'}
-            </span>
+            <Avatar
+              name={profile?.full_name}
+              avatarUrl={profile?.avatar_url}
+              color={profile?.avatar_color}
+              size={40}
+            />
             <div>
               <div className={styles.drawerUserName}>{profile?.full_name || 'Account'}</div>
               <div className={styles.drawerUserSub}>Trust ⭐{profile?.trust_score?.toFixed(1) || '5.0'}</div>
