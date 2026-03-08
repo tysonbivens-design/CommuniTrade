@@ -135,6 +135,10 @@ export default function App() {
       showToast('Please confirm your email before doing that. Check your inbox!', 'error')
       return
     }
+    if (profile?.suspended) {
+      showToast('Your account has been suspended. Please contact support@communitrade.app if you believe this is an error.', 'error')
+      return
+    }
     action()
   }
 
