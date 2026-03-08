@@ -29,7 +29,7 @@ export default function PushPrompt({ userId }: PushPromptProps) {
       const existing = await reg.pushManager.getSubscription()
       const sub = existing ?? await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!) as ArrayBuffer,
+        applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!) as unknown as ArrayBuffer,
       })
 
       await fetch('/api/push/subscribe', {
