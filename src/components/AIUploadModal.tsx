@@ -25,12 +25,38 @@ const OFFER_OPTIONS: { value: OfferType; label: string }[] = [
   { value: 'free', label: '🎁 Free' },
 ]
 
-function fileToBase64(file: File): Promise<string> {
+// Resize + compress image to stay well under 4MB before sending
+function compressImage(file: File, maxSizePx = 1600, quality = 0.82): Promise<{ base64: string; mediaType: string }> {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve((reader.result as string).split(',')[1])
-    reader.onerror = reject
-    reader.readAsDataURL(file)
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const scale = Math.min(1, maxSizePx / Math.max(img.width, img.height))
+      const w = Math.round(img.width * scale)
+      const h = Math.round(img.height * scale)
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(img, 0, 0, w, h)
+      canvas.toBlob(
+        blob => {
+          if (!blob) { reject(new Error('Compression failed')); return }
+          const reader = new FileReader()
+          reader.onload = () => resolve({
+            base64: (reader.result as string).split(',')[1],
+            mediaType: 'image/jpeg',
+          })
+          reader.onerror = reject
+          reader.readAsDataURL(blob)
+        },
+        'image/jpeg',
+        quality,
+      )
+    }
+    img.onerror = reject
+    img.src = url
   })
 }
 
@@ -46,11 +72,11 @@ export default function AIUploadModal({ userId, onClose, onSuccess, showToast }:
     if (!file) return
     setStage('processing')
     try {
-      const base64 = await fileToBase64(file)
+      const { base64, mediaType } = await compressImage(file)
       const res = await fetch('/api/ai-catalog', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64, mediaType: file.type, userId }),
+        body: JSON.stringify({ image: base64, mediaType, userId }),
       })
       if (res.status === 429) {
         const data = await res.json()
