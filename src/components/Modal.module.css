@@ -3,13 +3,13 @@
   background: rgba(0,0,0,0.5);
   z-index: 200;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  /* Top nav = 60px, bottom tab bar = 56px, +8px breathing room each side */
-  padding: 68px 1rem 68px;
-  padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px));
-  /* Prevent background scroll — overlay itself does NOT scroll */
-  overflow: hidden;
+  /* Padding keeps modal clear of both navbars */
+  padding: 68px 1rem calc(64px + env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 .modal {
   background: #fff;
@@ -19,17 +19,19 @@
   width: 100%;
   box-shadow: 0 24px 64px rgba(0,0,0,0.2);
   position: relative;
-  /* Modal scrolls its own content — never taller than the gap between navbars */
+  /* Never taller than the visible gap between navbars */
   max-height: calc(100dvh - 136px - env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  /* Prevent modal from shrinking when overlay is taller than screen */
+  flex-shrink: 0;
 }
 .close {
   position: sticky;
   top: 0;
   float: right;
-  margin: -0.5rem -0.5rem 0 0;
+  margin: -0.5rem -0.5rem 0.5rem 0;
   background: #fff;
   border: none;
   font-size: 1.3rem;
@@ -52,13 +54,13 @@
 
 @media (max-width: 768px) {
   .overlay {
-    padding: 68px 0.75rem calc(68px + env(safe-area-inset-bottom, 0px));
-    align-items: flex-start;
+    padding: 68px 0.75rem calc(64px + env(safe-area-inset-bottom, 0px));
+    align-items: center;
   }
   .modal {
     border-radius: 14px;
     padding: 1.25rem 1rem;
-    max-height: calc(100dvh - 136px - env(safe-area-inset-bottom, 0px));
+    max-height: calc(100dvh - 140px - env(safe-area-inset-bottom, 0px));
   }
   .formRow { grid-template-columns: 1fr; }
 }
