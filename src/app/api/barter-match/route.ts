@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { supabaseAdmin, resend, emailTemplate, esc, FROM, APP_URL } from '@/lib/email'
 import { rateLimit } from '@/lib/ratelimit'
+import { sendPushToUser } from '@/lib/webpush'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -159,40 +160,48 @@ export async function POST(req: NextRequest) {
       const userA = newPost.profiles as { email: string; full_name: string } | null
       const userB = match.profiles as { email: string; full_name: string } | null
 
-      if (userA?.email && userB?.email) {
-        await Promise.all([
-          resend.emails.send({
-            from: FROM, to: userA.email,
-            subject: `🤝 Barter match with ${esc(userB.full_name)}!`,
-            html: emailTemplate({
-              heading: 'You have a barter match!',
-              body: `Hi ${esc(userA.full_name?.split(' ')[0])},<br><br>
-Great news! <strong>${esc(userB.full_name)}</strong> has what you are looking for, and wants what you are offering.<br><br>
+      await Promise.all([
+        userA?.email ? resend.emails.send({
+          from: FROM, to: userA.email,
+          subject: `🤝 Barter match with ${esc(userB?.full_name)}!`,
+          html: emailTemplate({
+            heading: 'You have a barter match!',
+            body: `Hi ${esc(userA.full_name?.split(' ')[0])},<br><br>
+Great news! <strong>${esc(userB?.full_name)}</strong> has what you are looking for, and wants what you are offering.<br><br>
 You offer: <em>${esc(newPost.have_description)}</em><br>
 They offer: <em>${esc(match.have_description)}</em><br><br>
 Reach out to connect:<br>
-<strong>${esc(userB.full_name)}</strong> · <a href="mailto:${esc(userB.email)}">${esc(userB.email)}</a>`,
-              ctaText: 'View My Matches',
-              ctaUrl: `${APP_URL}?page=barter`,
-            }),
+<strong>${esc(userB?.full_name)}</strong> · <a href="mailto:${esc(userB?.email)}">${esc(userB?.email)}</a>`,
+            ctaText: 'View My Matches',
+            ctaUrl: `${APP_URL}?page=barter`,
           }),
-          resend.emails.send({
-            from: FROM, to: userB.email,
-            subject: `🤝 Barter match with ${esc(userA.full_name)}!`,
-            html: emailTemplate({
-              heading: 'You have a barter match!',
-              body: `Hi ${esc(userB.full_name?.split(' ')[0])},<br><br>
-Great news! <strong>${esc(userA.full_name)}</strong> has what you are looking for, and wants what you are offering.<br><br>
+        }) : Promise.resolve(),
+        userB?.email ? resend.emails.send({
+          from: FROM, to: userB.email,
+          subject: `🤝 Barter match with ${esc(userA?.full_name)}!`,
+          html: emailTemplate({
+            heading: 'You have a barter match!',
+            body: `Hi ${esc(userB.full_name?.split(' ')[0])},<br><br>
+Great news! <strong>${esc(userA?.full_name)}</strong> has what you are looking for, and wants what you are offering.<br><br>
 You offer: <em>${esc(match.have_description)}</em><br>
 They offer: <em>${esc(newPost.have_description)}</em><br><br>
 Reach out to connect:<br>
-<strong>${esc(userA.full_name)}</strong> · <a href="mailto:${esc(userA.email)}">${esc(userA.email)}</a>`,
-              ctaText: 'View My Matches',
-              ctaUrl: `${APP_URL}?page=barter`,
-            }),
+<strong>${esc(userA?.full_name)}</strong> · <a href="mailto:${esc(userA?.email)}">${esc(userA?.email)}</a>`,
+            ctaText: 'View My Matches',
+            ctaUrl: `${APP_URL}?page=barter`,
           }),
-        ])
-      }
+        }) : Promise.resolve(),
+        sendPushToUser(newPost.user_id, {
+          title: 'Barter Match Found! 🤝',
+          body: `${userB?.full_name || 'A neighbor'} wants what you have and has what you want!`,
+          url: `${APP_URL}?page=barter`,
+        }).catch(() => {}),
+        sendPushToUser(match.user_id, {
+          title: 'Barter Match Found! 🤝',
+          body: `${userA?.full_name || 'A neighbor'} wants what you have and has what you want!`,
+          url: `${APP_URL}?page=barter`,
+        }).catch(() => {}),
+      ])
 
       matchCount++
     }
