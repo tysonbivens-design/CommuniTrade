@@ -4,6 +4,7 @@ import { createBrowserClient } from '@/lib/supabase'
 import ItemCard from './ItemCard'
 import BorrowModal from './BorrowModal'
 import AIUploadModal from './AIUploadModal'
+import ReportUserModal from './ReportUserModal'
 import styles from './LibraryPage.module.css'
 import modalStyles from './Modal.module.css'
 import type { Item, AppCtx, ItemCategory, OfferType, Condition } from '@/types'
@@ -52,6 +53,7 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
   const [showAdd, setShowAdd] = useState(false)
   const [borrowItem, setBorrowItem] = useState<Item | null>(null)
   const [flagItem, setFlagItem] = useState<Item | null>(null)
+  const [reportUser, setReportUser] = useState<{ userId: string; userName: string } | null>(null)
   const [showAI, setShowAI] = useState(false)
 
   useEffect(() => {
@@ -264,6 +266,7 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
                     item={item}
                     onBorrow={(i: Item) => requireAuth(() => setBorrowItem(i))}
                     onFlag={(i: Item) => requireAuth(() => setFlagItem(i))}
+                    onReportUser={(uid, name) => requireAuth(() => setReportUser({ userId: uid, userName: name }))}
                   />
                 ))}
               </div>
@@ -323,6 +326,16 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
           userId={user!.id}
           onClose={() => setShowAI(false)}
           onSuccess={count => { setShowAI(false); showToast(`${count} item${count !== 1 ? 's' : ''} added to your inventory! 🎉`) }}
+          showToast={showToast}
+        />
+      )}
+      {reportUser && user && (
+        <ReportUserModal
+          reportedUserId={reportUser.userId}
+          reportedName={reportUser.userName}
+          reporterId={user.id}
+          onClose={() => setReportUser(null)}
+          onSuccess={() => { setReportUser(null); showToast("Report submitted. Thank you for keeping the community safe.") }}
           showToast={showToast}
         />
       )}
