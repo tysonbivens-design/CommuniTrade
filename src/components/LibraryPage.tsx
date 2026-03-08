@@ -8,6 +8,7 @@ import ReportUserModal from './ReportUserModal'
 import styles from './LibraryPage.module.css'
 import modalStyles from './Modal.module.css'
 import type { Item, AppCtx, ItemCategory, OfferType, Condition } from '@/types'
+import { useScrollLock } from '@/lib/useScrollLock'
 
 const PAGE_SIZE = 20
 const DB_FETCH_LIMIT = 500
@@ -360,6 +361,7 @@ interface AddItemModalProps {
 }
 
 function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalProps) {
+  useScrollLock()
   const supabase = createBrowserClient()
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({
@@ -492,6 +494,7 @@ interface FlagModalProps {
 }
 
 function FlagModal({ item, userId, onClose, onSuccess, showToast }: FlagModalProps) {
+  useScrollLock()
   const supabase = createBrowserClient()
   const [loading, setLoading] = useState(false)
   const [reason, setReason] = useState('unavailable')
