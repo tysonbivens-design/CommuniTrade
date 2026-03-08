@@ -54,7 +54,16 @@ export default function AuthModal({ mode, onClose, onSuccess, showToast }: AuthM
         onSuccess('Welcome to CommuniTrade! 🎉 Check your email to confirm your account.')
       }
     } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : 'Something went wrong', 'error')
+  const msg = err instanceof Error ? err.message.toLowerCase() : ''
+  const friendly = msg.includes('email not confirmed')
+    ? 'Please confirm your email before signing in. Check your inbox.'
+    : msg.includes('invalid login') || msg.includes('invalid credentials')
+    ? 'Incorrect email or password.'
+    : msg.includes('already registered')
+    ? 'An account with this email already exists. Try signing in instead.'
+    : 'Something went wrong. Please try again.'
+  showToast(friendly, 'error')
+}
     } finally {
       setLoading(false)
     }
