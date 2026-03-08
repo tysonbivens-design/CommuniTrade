@@ -51,6 +51,18 @@ export default function App() {
     setShowPushNudge(true)
   }
 
+  // ── Detect email confirmation redirect ───────────────────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('type') === 'signup') {
+      // Clean the URL
+      window.history.replaceState({}, '', '/')
+      setAuthMode('login')
+      setShowAuth(true)
+      setTimeout(() => showToast('Email confirmed! Sign in to get started 🎉'), 300)
+    }
+  }, [])
+
   // ── Auth state ────────────────────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
