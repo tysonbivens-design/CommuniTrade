@@ -57,7 +57,7 @@ export default function HomePage({ ctx }: { ctx: AppCtx }) {
       <div className={styles.hero}>
         <div className={styles.heroInner}>
           <h1 className={styles.heroTitle}>Your neighborhood's<br /><em>shared shelf.</em></h1>
-          <p className={styles.heroSub}>Borrow books, swap DVDs, trade skills — with real people in your community. No cash, no corporations. Just neighbors helping neighbors.</p>
+          <p className={styles.heroSub}>Borrow books, swap DVDs, trade skills, build community — with real people near you. No cash, no corporations. Just neighbors helping neighbors.</p>
           <div className={styles.heroBtns}>
             <button className="btn btn-primary btn-lg" onClick={() => navigate('library')}>Browse the Library</button>
             <button className={styles.secondaryBtn} onClick={() => requireAuth(() => navigate('library'))}>+ Add Your Items</button>
