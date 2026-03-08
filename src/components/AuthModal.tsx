@@ -2,7 +2,6 @@
 import { useState } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
 import styles from './Modal.module.css'
-import { useScrollLock } from '@/lib/useScrollLock'
 import type { AppCtx } from '@/types'
 
 interface AuthModalProps {
@@ -20,11 +19,13 @@ interface AuthForm {
 }
 
 export default function AuthModal({ mode, onClose, onSuccess, showToast }: AuthModalProps) {
-  useScrollLock()
   const supabase = createBrowserClient()
   const [isLogin, setIsLogin] = useState(mode === 'login')
   const [loading, setLoading] = useState(false)
   const [termsAccepted, setTermsAccepted] = useState(false)
+  const [showForgot, setShowForgot] = useState(false)
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [forgotLoading, setForgotLoading] = useState(false)
   const [form, setForm] = useState<AuthForm>({ email: '', password: '', full_name: '', zip_code: '' })
 
   const set = (k: keyof AuthForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -54,19 +55,65 @@ export default function AuthModal({ mode, onClose, onSuccess, showToast }: AuthM
         onSuccess('Welcome to CommuniTrade! 🎉 Check your email to confirm your account.')
       }
     } catch (err: unknown) {
-  const msg = err instanceof Error ? err.message.toLowerCase() : ''
-  const friendly = msg.includes('email not confirmed')
-    ? 'Please confirm your email before signing in. Check your inbox.'
-    : msg.includes('invalid login') || msg.includes('invalid credentials')
-    ? 'Incorrect email or password.'
-    : msg.includes('already registered')
-    ? 'An account with this email already exists. Try signing in instead.'
-    : 'Something went wrong. Please try again.'
-  showToast(friendly, 'error')
-}
+      const msg = err instanceof Error ? err.message.toLowerCase() : ''
+      const friendly = msg.includes('email not confirmed')
+        ? 'Please confirm your email before signing in. Check your inbox.'
+        : msg.includes('invalid login') || msg.includes('invalid credentials') || msg.includes('wrong password')
+        ? 'Incorrect email or password.'
+        : msg.includes('already registered') || msg.includes('user already exists')
+        ? 'An account with this email already exists. Try signing in instead.'
+        : msg.includes('weak password')
+        ? 'Password must be at least 6 characters.'
+        : 'Something went wrong. Please try again.'
+      showToast(friendly, 'error')
     } finally {
       setLoading(false)
     }
+  }
+
+  async function handleForgotPassword(e: React.FormEvent) {
+    e.preventDefault()
+    setForgotLoading(true)
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+        redirectTo: `${window.location.origin}?page=profile`,
+      })
+      if (error) throw error
+      showToast('Password reset email sent! Check your inbox.')
+      setShowForgot(false)
+      onClose()
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Could not send reset email', 'error')
+    } finally {
+      setForgotLoading(false)
+    }
+  }
+
+  if (showForgot) {
+    return (
+      <div className={styles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+        <div className={styles.modal}>
+          <button className={styles.close} onClick={onClose}>✕</button>
+          <h2 className={styles.title}>Reset Password</h2>
+          <p className={styles.subtitle}>Enter your email and we'll send you a reset link.</p>
+          <form onSubmit={handleForgotPassword}>
+            <div className="form-group">
+              <label className="label">Email</label>
+              <input
+                className="input" type="email" placeholder="you@example.com"
+                value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} required
+              />
+            </div>
+            <button type="submit" className={`btn btn-primary btn-lg ${styles.submitBtn}`} disabled={forgotLoading}>
+              {forgotLoading ? <span className="spinner" /> : 'Send Reset Email'}
+            </button>
+          </form>
+          <p className={styles.toggle}>
+            <button onClick={() => setShowForgot(false)}>← Back to sign in</button>
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -99,7 +146,18 @@ export default function AuthModal({ mode, onClose, onSuccess, showToast }: AuthM
             <input className="input" type="password" placeholder="••••••••" value={form.password} onChange={set('password')} required minLength={6} />
           </div>
 
-          {/* Terms — signup only */}
+          {isLogin && (
+            <div style={{ textAlign: 'right', marginTop: '-0.5rem', marginBottom: '1rem' }}>
+              <button
+                type="button"
+                onClick={() => { setShowForgot(true); setForgotEmail(form.email) }}
+                style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: '0.82rem', cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Forgot password?
+              </button>
+            </div>
+          )}
+
           {!isLogin && (
             <div style={{ marginBottom: '1.25rem' }}>
               <div style={{
@@ -115,7 +173,8 @@ export default function AuthModal({ mode, onClose, onSuccess, showToast }: AuthM
                 • You participate in trades, loans, and barters at your own risk. Always meet in safe, public places.<br />
                 • You will not use the platform to scam, defraud, or harm other members.<br />
                 • Listings that are inaccurate, unavailable, or abusive may be removed.<br />
-                • CommuniTrade is not liable for lost, stolen, or damaged items, or for disputes between members.
+                • CommuniTrade is not liable for lost, stolen, or damaged items, or for disputes between members.<br />
+                • The use of CommuniTrade for the trade of illicit substances, services, or products is strictly prohibited and will result in immediate removal.
               </div>
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--bark)' }}>
                 <input
