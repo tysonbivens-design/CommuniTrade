@@ -11,13 +11,8 @@ const supabase = createClient(
 
 
 // Allow up to 10MB request body (phone photos can be large)
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '10mb',
-    },
-  },
-}
+export const maxDuration = 30
+export const dynamic = 'force-dynamic'
 
 const DAILY_LIMIT = 5
 // Secondary IP limit: 10 attempts/hour regardless of account
