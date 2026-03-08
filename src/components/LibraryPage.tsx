@@ -33,7 +33,7 @@ function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): 
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
+export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx: AppCtx; initialModal?: 'add' | 'ai' | null; onModalOpened?: () => void }) {
   const { user, profile, showToast, requireAuth } = ctx
   const supabase = createBrowserClient()
 
@@ -55,6 +55,14 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
   const [flagItem, setFlagItem] = useState<Item | null>(null)
   const [reportUser, setReportUser] = useState<{ userId: string; userName: string } | null>(null)
   const [showAI, setShowAI] = useState(false)
+
+  // Open modal immediately if navigated here with one pending
+  useEffect(() => {
+    if (!initialModal) return
+    if (initialModal === 'add') requireAuth(() => setShowAdd(true))
+    if (initialModal === 'ai') requireAuth(() => setShowAI(true))
+    onModalOpened?.()
+  }, [initialModal])
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 300)
@@ -165,9 +173,14 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
                 onChange={e => setSearch(e.target.value)}
               />
             </div>
-            <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>
-              + Add Item
-            </button>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>
+                + Add Item
+              </button>
+              <button className="btn btn-outline" onClick={() => requireAuth(() => setShowAI(true))} title="Bulk AI Upload">
+                📷 AI Upload
+              </button>
+            </div>
           </div>
 
           {/* Category tabs */}
@@ -285,13 +298,7 @@ export default function LibraryPage({ ctx }: { ctx: AppCtx }) {
             </>
           )}
 
-          <div className={styles.aiSection}>
-            <h2 className="section-title">📸 AI Catalog Upload</h2>
-            <p className="section-subtitle">Snap a photo of your shelf and Claude will extract everything automatically</p>
-            <button className="btn btn-primary btn-lg" onClick={() => requireAuth(() => setShowAI(true))}>
-              Try AI Catalog Upload →
-            </button>
-          </div>
+
         </div>
       </div>
 
