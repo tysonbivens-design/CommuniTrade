@@ -4,6 +4,7 @@ import { createBrowserClient } from '@/lib/supabase'
 import ItemCard from './ItemCard'
 import BorrowModal from './BorrowModal'
 import AIUploadModal from './AIUploadModal'
+import ReportUserModal from './ReportUserModal'
 import styles from './HomePage.module.css'
 import type { Item, AppCtx } from '@/types'
 
@@ -19,6 +20,7 @@ export default function HomePage({ ctx }: { ctx: AppCtx }) {
   const [recent, setRecent] = useState<Item[]>([])
   const [stats, setStats] = useState<HomeStats>({ items: 0, members: 0, trades: 0 })
   const [borrowItem, setBorrowItem] = useState<Item | null>(null)
+  const [reportUser, setReportUser] = useState<{ userId: string; userName: string } | null>(null)
   const [showAI, setShowAI] = useState(false)
 
   useEffect(() => {
@@ -28,7 +30,7 @@ export default function HomePage({ ctx }: { ctx: AppCtx }) {
       const [itemsResult, itemCount, memberCount, loanCount] = await Promise.all([
         supabase
           .from('items')
-          .select('*, profiles(full_name, trust_score, avatar_color, lat, lng)')
+          .select('*, profiles(full_name, trust_score, avatar_color, avatar_url, lat, lng)')
           .eq('status', 'available')
           .eq('archived', false)
           .order('created_at', { ascending: false })
@@ -57,7 +59,7 @@ export default function HomePage({ ctx }: { ctx: AppCtx }) {
       <div className={styles.hero}>
         <div className={styles.heroInner}>
           <h1 className={styles.heroTitle}>Your neighborhood's<br /><em>shared shelf.</em></h1>
-          <p className={styles.heroSub}>Borrow books, swap DVDs, trade skills, build community — with real people near you. No cash, no corporations. Just neighbors helping neighbors.</p>
+          <p className={styles.heroSub}>Borrow books, swap DVDs, trade skills — with real people in your community. No cash, no corporations. Just neighbors helping neighbors.</p>
           <div className={styles.heroBtns}>
             <button className="btn btn-primary btn-lg" onClick={() => navigate('library')}>Browse the Library</button>
             <button className={styles.secondaryBtn} onClick={() => requireAuth(() => navigate('library'))}>+ Add Your Items</button>
@@ -89,6 +91,7 @@ export default function HomePage({ ctx }: { ctx: AppCtx }) {
                   item={item}
                   onBorrow={(i: Item) => requireAuth(() => setBorrowItem(i))}
                   onFlag={() => requireAuth(() => navigate('library'))}
+                  onReportUser={(uid, name) => requireAuth(() => setReportUser({ userId: uid, userName: name }))}
                 />
               ))}
             </div>
@@ -110,6 +113,16 @@ export default function HomePage({ ctx }: { ctx: AppCtx }) {
           userId={user!.id}
           onClose={() => setBorrowItem(null)}
           onSuccess={() => { setBorrowItem(null); showToast('Borrow request sent! 📬') }}
+          showToast={showToast}
+        />
+      )}
+      {reportUser && user && (
+        <ReportUserModal
+          reportedUserId={reportUser.userId}
+          reportedName={reportUser.userName}
+          reporterId={user.id}
+          onClose={() => setReportUser(null)}
+          onSuccess={() => { setReportUser(null); showToast('Report submitted. Thank you for keeping the community safe.') }}
           showToast={showToast}
         />
       )}
