@@ -14,6 +14,9 @@ import AuthModal from '@/components/AuthModal'
 import ConfirmBanner from '@/components/ConfirmBanner'
 import Toast from '@/components/Toast'
 import NotifToast from '@/components/NotifToast'
+import LandingPage from '@/components/LandingPage'
+import OnboardingTour, { shouldShowTour } from '@/components/OnboardingTour'
+import InstallPrompt from '@/components/InstallPrompt'
 import type { Profile } from '@/types'
 
 import type { Page } from '@/types'
@@ -31,6 +34,8 @@ export default function App() {
   const [toast, setToast]       = useState<{ msg: string; type?: 'success' | 'error' } | null>(null)
   const [notifCount, setNotifCount] = useState(0)
   const [notifToast, setNotifToast] = useState<{ title: string; type: string } | null>(null)
+  const [showTour, setShowTour]       = useState(false)
+  const [showInstall, setShowInstall] = useState(false)
 
   // ── Auth state ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -38,10 +43,12 @@ export default function App() {
       setUser(session?.user ?? null)
       if (session?.user) loadProfile(session.user.id)
     })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null)
-      if (session?.user) loadProfile(session.user.id)
-      else { setProfile(null); setNotifCount(0) }
+      if (session?.user) {
+        loadProfile(session.user.id)
+        if (event === 'SIGNED_IN' && shouldShowTour()) setShowTour(true)
+      } else { setProfile(null); setNotifCount(0) }
     })
     return () => subscription.unsubscribe()
   }, [])
@@ -121,7 +128,15 @@ export default function App() {
         <ConfirmBanner email={user.email ?? ''} />
       )}
 
-      {page === 'home'          && <HomePage ctx={ctx} />}
+      {page === 'home' && (
+        user
+          ? <HomePage ctx={ctx} />
+          : <LandingPage
+              ctx={ctx}
+              onSignUp={() => { setAuthMode('signup'); setShowAuth(true) }}
+              onSignIn={() => { setAuthMode('login'); setShowAuth(true) }}
+            />
+      )}
       {page === 'library'       && <LibraryPage ctx={ctx} />}
       {page === 'barter'        && <BarterPage ctx={ctx} />}
       {page === 'loans'         && <LoansPage ctx={ctx} />}
@@ -147,6 +162,16 @@ export default function App() {
           onView={(p) => setPage(p as Page)}
           onDismiss={() => setNotifToast(null)}
         />
+      )}
+      {showTour && (
+        <OnboardingTour
+          navigate={setPage}
+          onDone={() => { setShowTour(false); setShowInstall(true) }}
+        />
+      )}
+
+      {showInstall && (
+        <InstallPrompt onDone={() => setShowInstall(false)} />
       )}
     </>
   )
