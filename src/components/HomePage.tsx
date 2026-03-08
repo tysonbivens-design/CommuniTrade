@@ -64,6 +64,7 @@ export default function HomePage({ ctx }: { ctx: AppCtx }) {
             <button className="btn btn-primary btn-lg" onClick={() => navigate('library')}>Browse the Library</button>
             <button className={styles.secondaryBtn} onClick={() => requireAuth(() => navigate('library', 'add'))}>+ Add Your Items</button>
           </div>
+
           <div className={styles.heroStats}>
             <div className={styles.stat}><div className={styles.statNum}>{stats.items}</div><div className={styles.statLabel}>Items Available</div></div>
             <div className={styles.stat}><div className={styles.statNum}>{stats.members}</div><div className={styles.statLabel}>Registered Users</div></div>
@@ -73,6 +74,14 @@ export default function HomePage({ ctx }: { ctx: AppCtx }) {
       </div>
 
       <div className="container">
+        <div className={styles.ctaBanner}>
+          <h2>Got a shelf full of DVDs or books?</h2>
+          <p>Snap a photo and our AI will catalog everything in seconds — then you approve what to share.</p>
+          <button className="btn btn-primary btn-lg" onClick={() => requireAuth(() => navigate('library', 'ai'))}>
+            Try AI Catalog Upload →
+          </button>
+        </div>
+
         <div className="section">
           <h2 className="section-title">Recently Added Near You</h2>
           <p className="section-subtitle">Fresh additions from your neighbors</p>
@@ -98,13 +107,6 @@ export default function HomePage({ ctx }: { ctx: AppCtx }) {
           )}
         </div>
 
-        <div className={styles.ctaBanner}>
-          <h2>Got a shelf full of DVDs or books?</h2>
-          <p>Snap a photo and our AI will catalog everything in seconds — then you approve what to share.</p>
-          <button className="btn btn-primary btn-lg" onClick={() => requireAuth(() => navigate('library', 'ai'))}>
-            Try AI Catalog Upload →
-          </button>
-        </div>
       </div>
 
       {borrowItem && (
