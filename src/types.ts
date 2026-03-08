@@ -150,5 +150,5 @@ export interface AppCtx {
   profile: Profile | null
   showToast: (msg: string, type?: 'success' | 'error') => void
   requireAuth: (action: () => void) => void
-  navigate: (page: Page) => void
+  navigate: (page: Page, modal?: 'add' | 'ai') => void
 }
