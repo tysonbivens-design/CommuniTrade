@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
 import styles from './Modal.module.css'
+import { useScrollLock } from '@/lib/useScrollLock'
 import type { AppCtx } from '@/types'
 
 interface AuthModalProps {
@@ -19,6 +20,7 @@ interface AuthForm {
 }
 
 export default function AuthModal({ mode, onClose, onSuccess, showToast }: AuthModalProps) {
+  useScrollLock()
   const supabase = createBrowserClient()
   const [isLogin, setIsLogin] = useState(mode === 'login')
   const [loading, setLoading] = useState(false)
