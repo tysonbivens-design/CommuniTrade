@@ -9,6 +9,16 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+
+// Allow up to 10MB request body (phone photos can be large)
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '10mb',
+    },
+  },
+}
+
 const DAILY_LIMIT = 5
 // Secondary IP limit: 10 attempts/hour regardless of account
 // Catches unauthenticated probing and multi-account abuse
