@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin, resend, emailTemplate, FROM, APP_URL } from '@/lib/email'
+import { sendPushToUser } from '@/lib/webpush'
 
 // ─── Vercel Cron — runs daily at 8am UTC ──────────────────────────────────────
 // Registered in vercel.json: { "crons": [{ "path": "/api/cron/overdue", "schedule": "0 8 * * *" }] }
@@ -33,8 +34,8 @@ export async function GET(req: NextRequest) {
       const itemTitle = (loan.items as { title: string } | null)?.title || 'your borrowed item'
       const dueDate = new Date(loan.due_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 
-      if (borrower?.email) {
-        await resend.emails.send({
+      await Promise.all([
+        borrower?.email ? resend.emails.send({
           from: FROM,
           to: borrower.email,
           subject: `⏰ "${itemTitle}" is due back in 2 days`,
@@ -46,8 +47,13 @@ Please arrange the return with the owner so they can confirm it.`,
             ctaText: 'View My Loans',
             ctaUrl: `${APP_URL}?page=loans`,
           }),
-        })
-      }
+        }) : Promise.resolve(),
+        sendPushToUser(loan.borrower_id, {
+          title: '⏰ Return Reminder',
+          body: `"${itemTitle}" is due back on ${dueDate}. Please arrange the return.`,
+          url: `${APP_URL}?page=loans`,
+        }).catch(() => {}),
+      ])
 
       // In-app notification
       await supabaseAdmin.from('notifications').insert({
@@ -94,8 +100,8 @@ Please arrange the return with the owner so they can confirm it.`,
         body: `${borrowerName} hasn't returned "${itemTitle}" yet. It was due on ${dueDate}.`,
       })
 
-      if (lender?.email) {
-        await resend.emails.send({
+      await Promise.all([
+        lender?.email ? resend.emails.send({
           from: FROM,
           to: lender.email,
           subject: `🚨 "${itemTitle}" is overdue`,
@@ -107,8 +113,18 @@ You can send them a reminder from the Loans page.`,
             ctaText: 'View My Loans',
             ctaUrl: `${APP_URL}?page=loans`,
           }),
-        })
-      }
+        }) : Promise.resolve(),
+        sendPushToUser(loan.lender_id, {
+          title: 'Item Overdue 🚨',
+          body: `${borrowerName} hasn't returned "${itemTitle}" yet. It was due on ${dueDate}.`,
+          url: `${APP_URL}?page=loans`,
+        }).catch(() => {}),
+        sendPushToUser(loan.borrower_id, {
+          title: 'Item Overdue 🚨',
+          body: `"${itemTitle}" was due back on ${dueDate}. Please return it as soon as possible.`,
+          url: `${APP_URL}?page=loans`,
+        }).catch(() => {}),
+      ])
 
       markedOverdue++
     }
