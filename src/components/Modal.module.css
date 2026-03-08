@@ -3,18 +3,25 @@
   background: rgba(0,0,0,0.5);
   z-index: 200;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
   padding: 1rem;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  /* Safe area for notched phones */
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }
 .modal {
   background: #fff; border-radius: 16px; padding: 2rem;
   max-width: 500px; width: 100%;
   box-shadow: 0 24px 64px rgba(0,0,0,0.2);
   position: relative;
-  margin: 2rem auto;
+  /* Don't shrink below content — lets overlay scroll when modal is taller than viewport */
+  flex-shrink: 0;
+  margin: auto;
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
 }
 .close {
   position: absolute; top: 1rem; right: 1rem;
@@ -32,7 +39,11 @@
 .formRow { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
 
 @media (max-width: 600px) {
-  .overlay { padding: 0.5rem; }
-  .modal { margin: 0.5rem auto; border-radius: 14px; padding: 1.5rem; }
+  .overlay { padding: 0.75rem; }
+  .modal {
+    border-radius: 14px;
+    padding: 1.5rem 1.25rem;
+    max-height: calc(100dvh - 1.5rem);
+  }
   .formRow { grid-template-columns: 1fr; }
 }
