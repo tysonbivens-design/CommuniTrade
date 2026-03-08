@@ -179,6 +179,67 @@ Reach out to connect:<br>
       ])
     }
 
+
+    // ─── Admin: Item Auto-Flagged ────────────────────────────────────
+    if (type === 'admin_item_flagged') {
+      const { itemTitle, itemId, adminIds } = body
+      if (!Array.isArray(adminIds) || adminIds.length === 0) return NextResponse.json({ ok: true })
+
+      for (const adminId of adminIds) {
+        const admin = await getProfile(adminId)
+        if (!admin?.email) continue
+        await Promise.all([
+          resend.emails.send({
+            from: FROM, to: admin.email,
+            subject: `🚩 Item flagged: "${esc(itemTitle)}"`,
+            html: emailTemplate({
+              heading: 'Item Needs Review 🚩',
+              body: `Hi ${esc(admin.full_name?.split(' ')[0])},<br><br>
+The listing <strong>${esc(itemTitle)}</strong> has been flagged by 3 community members and is now hidden from the library.<br><br>
+Please review it in the Admin dashboard.`,
+              ctaText: 'Review in Admin',
+              ctaUrl: `${APP_URL}?page=admin`,
+            })
+          }),
+          sendPushToUser(adminId, {
+            title: 'Item Flagged 🚩',
+            body: `"${itemTitle}" was flagged by 3 users and needs review.`,
+            url: `${APP_URL}?page=admin`,
+          }).catch(() => {}),
+        ])
+      }
+    }
+
+    // ─── Admin: User Auto-Suspended ──────────────────────────────────
+    if (type === 'admin_user_suspended') {
+      const { reportedName, reportedUserId, adminIds } = body
+      if (!Array.isArray(adminIds) || adminIds.length === 0) return NextResponse.json({ ok: true })
+
+      for (const adminId of adminIds) {
+        const admin = await getProfile(adminId)
+        if (!admin?.email) continue
+        await Promise.all([
+          resend.emails.send({
+            from: FROM, to: admin.email,
+            subject: `🚨 User suspended: ${esc(reportedName)}`,
+            html: emailTemplate({
+              heading: 'User Auto-Suspended 🚨',
+              body: `Hi ${esc(admin.full_name?.split(' ')[0])},<br><br>
+<strong>${esc(reportedName)}</strong> has been automatically suspended after receiving 3 reports from community members.<br><br>
+Please review their account in the Admin dashboard. You can unsuspend them if the reports appear unfounded.`,
+              ctaText: 'Review in Admin',
+              ctaUrl: `${APP_URL}?page=admin`,
+            })
+          }),
+          sendPushToUser(adminId, {
+            title: 'User Suspended 🚨',
+            body: `${reportedName} was auto-suspended after 3 reports. Tap to review.`,
+            url: `${APP_URL}?page=admin`,
+          }).catch(() => {}),
+        ])
+      }
+    }
+
     return NextResponse.json({ ok: true })
   } catch (err: unknown) {
     console.error('Notify error:', err)
