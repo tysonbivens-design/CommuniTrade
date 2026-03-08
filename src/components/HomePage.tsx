@@ -62,7 +62,7 @@ export default function HomePage({ ctx }: { ctx: AppCtx }) {
           <p className={styles.heroSub}>Borrow books, swap DVDs, trade skills — with real people in your community. No cash, no corporations. Just neighbors helping neighbors.</p>
           <div className={styles.heroBtns}>
             <button className="btn btn-primary btn-lg" onClick={() => navigate('library')}>Browse the Library</button>
-            <button className={styles.secondaryBtn} onClick={() => requireAuth(() => navigate('library'))}>+ Add Your Items</button>
+            <button className={styles.secondaryBtn} onClick={() => requireAuth(() => navigate('library', 'add'))}>+ Add Your Items</button>
           </div>
           <div className={styles.heroStats}>
             <div className={styles.stat}><div className={styles.statNum}>{stats.items}</div><div className={styles.statLabel}>Items Available</div></div>
@@ -101,7 +101,7 @@ export default function HomePage({ ctx }: { ctx: AppCtx }) {
         <div className={styles.ctaBanner}>
           <h2>Got a shelf full of DVDs or books?</h2>
           <p>Snap a photo and our AI will catalog everything in seconds — then you approve what to share.</p>
-          <button className="btn btn-primary btn-lg" onClick={() => requireAuth(() => setShowAI(true))}>
+          <button className="btn btn-primary btn-lg" onClick={() => requireAuth(() => navigate('library', 'ai'))}>
             Try AI Catalog Upload →
           </button>
         </div>
