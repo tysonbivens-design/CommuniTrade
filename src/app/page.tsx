@@ -40,14 +40,24 @@ export default function App() {
   // ── Auth state ────────────────────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      if (session?.user) loadProfile(session.user.id)
+      const u = session?.user ?? null
+      setUser(u)
+      if (u) {
+        loadProfile(u.id)
+        // Show tour on first load if confirmed and hasn't seen it yet
+        if (u.email_confirmed_at && shouldShowTour()) {
+          setTimeout(() => setShowTour(true), 1200)
+        }
+      }
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null)
       if (session?.user) {
         loadProfile(session.user.id)
-        if (event === 'SIGNED_IN' && shouldShowTour()) setShowTour(true)
+        // Also catch the moment email gets confirmed (USER_UPDATED) or fresh sign-in
+        if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && shouldShowTour()) {
+          setTimeout(() => setShowTour(true), 1200)
+        }
       } else { setProfile(null); setNotifCount(0) }
     })
     return () => subscription.unsubscribe()
