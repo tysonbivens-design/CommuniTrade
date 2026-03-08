@@ -14,11 +14,13 @@ interface ItemCardProps {
   item: Item
   onBorrow: (item: Item) => void
   onFlag: (item: Item) => void
+  onReportUser?: (userId: string, userName: string) => void
   isOwnItem?: boolean
 }
 
-export default function ItemCard({ item, onBorrow, onFlag, isOwnItem }: ItemCardProps) {
+export default function ItemCard({ item, onBorrow, onFlag, onReportUser, isOwnItem }: ItemCardProps) {
   const [showDetail, setShowDetail] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   const emoji = EMOJIS[item.category] || '📦'
   const isAvailable = item.status === 'available'
 
@@ -62,13 +64,61 @@ export default function ItemCard({ item, onBorrow, onFlag, isOwnItem }: ItemCard
               ) : (
                 <button className="btn btn-outline btn-sm" disabled>On Loan</button>
               )}
-              <button
-                className={styles.flagBtn}
-                onClick={e => { e.stopPropagation(); onFlag(item) }}
-                title="Flag this listing"
-              >
-                🚩
-              </button>
+
+              {/* ⋯ menu — flag item + report user */}
+              {!isOwnItem && (
+                <div style={{ position: 'relative' }}>
+                  <button
+                    className={styles.flagBtn}
+                    onClick={e => { e.stopPropagation(); setMenuOpen(o => !o) }}
+                    title="Options"
+                  >
+                    ⋯
+                  </button>
+                  {menuOpen && (
+                    <div
+                      onClick={e => e.stopPropagation()}
+                      style={{
+                        position: 'absolute', bottom: 'calc(100% + 4px)', right: 0,
+                        background: '#fff', border: '1px solid var(--border)', borderRadius: 8,
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 10,
+                        minWidth: 170, overflow: 'hidden',
+                      }}
+                    >
+                      <button
+                        onClick={() => { setMenuOpen(false); onFlag(item) }}
+                        style={{
+                          display: 'block', width: '100%', textAlign: 'left',
+                          padding: '0.65rem 1rem', fontSize: '0.83rem', background: 'none',
+                          border: 'none', cursor: 'pointer', color: 'var(--bark)',
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--cream)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                      >
+                        🚩 Flag this listing
+                      </button>
+                      {onReportUser && item.profiles?.full_name && (
+                        <button
+                          onClick={() => {
+                            setMenuOpen(false)
+                            onReportUser(item.user_id, item.profiles?.full_name || 'this user')
+                          }}
+                          style={{
+                            display: 'block', width: '100%', textAlign: 'left',
+                            padding: '0.65rem 1rem', fontSize: '0.83rem', background: 'none',
+                            border: 'none', cursor: 'pointer', color: '#C62828',
+                            borderTop: '1px solid var(--border)',
+                          }}
+                          onMouseEnter={e => (e.currentTarget.style.background = '#FEECEC')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                        >
+                          🚨 Report user
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
