@@ -104,5 +104,5 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
   const rawData = window.atob(base64)
-  return new Uint8Array([...rawData].map(c => c.charCodeAt(0)))
+  return new Uint8Array(Array.from(rawData).map(c => c.charCodeAt(0)))
 }
