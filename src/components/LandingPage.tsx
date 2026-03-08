@@ -76,7 +76,7 @@ export default function LandingPage({ ctx, onSignUp, onSignIn }: LandingPageProp
             <em>shared shelf.</em>
           </h1>
           <p className={styles.heroSub}>
-            Borrow books. Swap DVDs. Trade skills. With real people who live near you —
+            Borrow books. Swap DVDs. Trade skills. Build community. With real people who live near you —
             not strangers on the internet.
           </p>
           <div className={styles.heroCtas}>
