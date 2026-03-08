@@ -4,7 +4,7 @@ import styles from './InstallPrompt.module.css'
 
 const DISMISSED_KEY = 'ct_install_dismissed'
 
-interface BeforeInstallPromptEvent extends Event {
+type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
 }
