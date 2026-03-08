@@ -28,6 +28,7 @@ const supabase = createBrowserClient()
 
 export default function App() {
   const [page, setPage]         = useState<Page>('home')
+  const [pendingModal, setPendingModal] = useState<'add' | 'ai' | null>(null)
   const [user, setUser]         = useState<User | null>(null)
   const [profile, setProfile]   = useState<Profile | null>(null)
   const [showAuth, setShowAuth] = useState(false)
@@ -142,7 +143,12 @@ export default function App() {
     action()
   }
 
-  const ctx = { user, profile, showToast, requireAuth, navigate: setPage }
+  function navigate(p: Page, modal?: 'add' | 'ai') {
+    setPage(p)
+    if (modal) setPendingModal(modal)
+  }
+
+  const ctx = { user, profile, showToast, requireAuth, navigate }
 
   return (
     <>
@@ -171,7 +177,7 @@ export default function App() {
               onSignIn={() => { setAuthMode('login'); setShowAuth(true) }}
             />
       )}
-      {page === 'library'       && <LibraryPage ctx={ctx} />}
+      {page === 'library'       && <LibraryPage ctx={ctx} initialModal={pendingModal} onModalOpened={() => setPendingModal(null)} />}
       {page === 'barter'        && <BarterPage ctx={ctx} />}
       {page === 'loans'         && <LoansPage ctx={ctx} />}
       {page === 'notifications' && <NotificationsPage ctx={ctx} onRead={() => loadNotifCount(user?.id ?? '')} />}
