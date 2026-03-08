@@ -55,3 +55,44 @@ self.addEventListener('fetch', e => {
       .catch(() => caches.match(request))
   )
 })
+
+// ─── Push notifications ───────────────────────────────────────────────────────
+
+self.addEventListener('push', e => {
+  if (!e.data) return
+
+  let payload
+  try {
+    payload = e.data.json()
+  } catch {
+    payload = { title: 'CommuniTrade', body: e.data.text(), url: '/' }
+  }
+
+  e.waitUntil(
+    self.registration.showNotification(payload.title || 'CommuniTrade', {
+      body: payload.body || '',
+      icon: payload.icon || '/icons/icon-192.png',
+      badge: payload.badge || '/icons/icon-192.png',
+      data: { url: payload.url || '/' },
+      vibrate: [200, 100, 200],
+    })
+  )
+})
+
+self.addEventListener('notificationclick', e => {
+  e.notification.close()
+  const url = e.notification.data?.url || '/'
+  e.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+      // Focus existing window if open
+      for (const client of clientList) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          client.navigate(url)
+          return client.focus()
+        }
+      }
+      // Otherwise open a new window
+      if (clients.openWindow) return clients.openWindow(url)
+    })
+  )
+})
