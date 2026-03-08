@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
+import { createBrowserClient } from '@/lib/supabase'
 import styles from './LandingPage.module.css'
 import type { AppCtx } from '@/types'
 
@@ -8,12 +9,6 @@ const FEATURES = [
   { icon: '⚖️', title: 'Barter Skills', body: 'Trade what you have for what you need. Guitar lessons for fresh eggs. AI matches you automatically.' },
   { icon: '⭐', title: 'Trust Scores', body: 'Every exchange builds your reputation. The community self-polices — good neighbors rise to the top.' },
   { icon: '📍', title: 'Hyper-Local', body: 'Set your radius. See only what\'s near you. Your neighborhood, not the whole internet.' },
-]
-
-const TESTIMONIALS = [
-  { quote: "Borrowed a drill, lent out three cookbooks, traded sourdough starter for piano lessons. All within six blocks.", name: "Maria G.", zip: "80203" },
-  { quote: "Finally a use for the 200 DVDs taking up space in my garage. My neighbors are obsessed.", name: "James T.", zip: "94110" },
-  { quote: "The trust score system is genius. I knew exactly who I was dealing with before the first message.", name: "Priya K.", zip: "10025" },
 ]
 
 const ITEMS = [
@@ -33,9 +28,10 @@ interface LandingPageProps {
 
 export default function LandingPage({ ctx, onSignUp, onSignIn }: LandingPageProps) {
   const { navigate } = ctx
-  const [activeTestimonial, setActiveTestimonial] = useState(0)
+  const supabase = createBrowserClient()
   const heroRef = useRef<HTMLDivElement>(null)
   const [scrollY, setScrollY] = useState(0)
+  const [stats, setStats] = useState({ items: 0, members: 0, trades: 0 })
 
   useEffect(() => {
     const handler = () => setScrollY(window.scrollY)
@@ -44,10 +40,22 @@ export default function LandingPage({ ctx, onSignUp, onSignIn }: LandingPageProp
   }, [])
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setActiveTestimonial(i => (i + 1) % TESTIMONIALS.length)
-    }, 4000)
-    return () => clearInterval(interval)
+    let cancelled = false
+    async function loadStats() {
+      const [itemCount, memberCount, loanCount] = await Promise.all([
+        supabase.from('items').select('*', { count: 'exact', head: true }).eq('archived', false),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }),
+        supabase.from('loans').select('*', { count: 'exact', head: true }),
+      ])
+      if (cancelled) return
+      setStats({
+        items: itemCount.count || 0,
+        members: memberCount.count || 0,
+        trades: loanCount.count || 0,
+      })
+    }
+    loadStats()
+    return () => { cancelled = true }
   }, [])
 
   return (
@@ -112,13 +120,11 @@ export default function LandingPage({ ctx, onSignUp, onSignIn }: LandingPageProp
       {/* ── SOCIAL PROOF STRIP ───────────────────────────────────── */}
       <section className={styles.strip}>
         <div className={styles.stripInner}>
-          <div className={styles.stripStat}><span className={styles.stripNum}>2,400+</span><span className={styles.stripLabel}>Items Available</span></div>
+          <div className={styles.stripStat}><span className={styles.stripNum}>{stats.items}</span><span className={styles.stripLabel}>Items Available</span></div>
           <div className={styles.stripDivider} />
-          <div className={styles.stripStat}><span className={styles.stripNum}>840+</span><span className={styles.stripLabel}>Neighbors Joined</span></div>
+          <div className={styles.stripStat}><span className={styles.stripNum}>{stats.members}</span><span className={styles.stripLabel}>Neighbors Joined</span></div>
           <div className={styles.stripDivider} />
-          <div className={styles.stripStat}><span className={styles.stripNum}>1,200+</span><span className={styles.stripLabel}>Trades Completed</span></div>
-          <div className={styles.stripDivider} />
-          <div className={styles.stripStat}><span className={styles.stripNum}>4.9★</span><span className={styles.stripLabel}>Average Trust Score</span></div>
+          <div className={styles.stripStat}><span className={styles.stripNum}>{stats.trades}</span><span className={styles.stripLabel}>Trades Completed</span></div>
         </div>
       </section>
 
@@ -195,38 +201,6 @@ export default function LandingPage({ ctx, onSignUp, onSignIn }: LandingPageProp
                 ))}
               </div>
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── TESTIMONIALS ─────────────────────────────────────────── */}
-      <section className={styles.section}>
-        <div className="container">
-          <div className={styles.sectionLabel}>Community voices</div>
-          <h2 className={styles.sectionTitle}>Neighbors love it</h2>
-          <div className={styles.testimonials}>
-            {TESTIMONIALS.map((t, i) => (
-              <div
-                key={i}
-                className={`${styles.testimonial} ${i === activeTestimonial ? styles.testimonialActive : ''}`}
-                onClick={() => setActiveTestimonial(i)}
-              >
-                <p className={styles.testimonialQuote}>"{t.quote}"</p>
-                <div className={styles.testimonialMeta}>
-                  <span className={styles.testimonialName}>{t.name}</span>
-                  <span className={styles.testimonialZip}>Zip {t.zip}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className={styles.testimonialDots}>
-            {TESTIMONIALS.map((_, i) => (
-              <button
-                key={i}
-                className={`${styles.dot} ${i === activeTestimonial ? styles.dotActive : ''}`}
-                onClick={() => setActiveTestimonial(i)}
-              />
-            ))}
           </div>
         </div>
       </section>
