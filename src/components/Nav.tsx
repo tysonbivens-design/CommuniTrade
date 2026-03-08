@@ -143,7 +143,7 @@ export default function Nav({ page, setPage, user, profile, notifCount, onSignIn
           ))}
           {user && (
             <>
-              <button className={`${styles.link} ${page === 'loans' ? styles.active : ''}`} onClick={() => navigate('loans')}>My Loans</button>
+              <button className={`${styles.link} ${page === 'loans' ? styles.active : ''}`} onClick={() => navigate('loans')} data-tour="loans">My Loans</button>
               <button className={`${styles.link} ${page === 'notifications' ? styles.active : ''}`} onClick={() => navigate('notifications')}>
                 Notifications {notifCount > 0 && <span className={styles.badge}>{notifCount}</span>}
               </button>
