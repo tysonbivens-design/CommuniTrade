@@ -13,12 +13,14 @@
     "react-dom": "^18",
     "@supabase/supabase-js": "^2.44.4",
     "resend": "^3.4.0",
-    "@anthropic-ai/sdk": "^0.27.0"
+    "@anthropic-ai/sdk": "^0.27.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "@types/web-push": "^3.6.3",
     "typescript": "^5"
   }
 }
