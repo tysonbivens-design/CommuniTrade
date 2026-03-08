@@ -24,6 +24,10 @@ export default function InstallPrompt({ onDone }: InstallPromptProps) {
     if (localStorage.getItem(DISMISSED_KEY)) { onDone(); return }
     if (window.matchMedia('(display-mode: standalone)').matches) { onDone(); return }
 
+    // Desktop — skip entirely
+    const isMobile = /iphone|ipad|ipod|android/i.test(navigator.userAgent)
+    if (!isMobile) { onDone(); return }
+
     const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) && !(window.navigator as any).standalone
     setIsIOS(ios)
 
