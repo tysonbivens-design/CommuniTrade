@@ -68,11 +68,19 @@ export default function OnboardingTour({ navigate, onDone }: OnboardingTourProps
 
   function positionTooltip() {
     const target = document.querySelector(STEPS[step].target)
-    if (!target) return
+    if (!target) {
+      // Target not visible (e.g. mobile nav hidden) — center the tooltip instead
+      setPos({
+        top: window.innerHeight / 2 - 100 + window.scrollY,
+        left: Math.max(16, window.innerWidth / 2 - 150),
+        width: 300,
+      })
+      return
+    }
     const rect = target.getBoundingClientRect()
     setPos({
       top: rect.bottom + window.scrollY + 10,
-      left: rect.left + window.scrollX,
+      left: Math.max(8, Math.min(rect.left + window.scrollX, window.innerWidth - 316)),
       width: rect.width,
     })
   }
