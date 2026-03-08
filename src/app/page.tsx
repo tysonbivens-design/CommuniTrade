@@ -148,6 +148,13 @@ export default function App() {
     if (modal) setPendingModal(modal)
   }
 
+  // Lock body scroll when any modal is open (prevents background scroll on mobile)
+  const anyModalOpen = showAuth
+  useEffect(() => {
+    document.body.style.overflow = anyModalOpen ? 'hidden' : ''
+    return () => { document.body.style.overflow = '' }
+  }, [anyModalOpen])
+
   const ctx = { user, profile, showToast, requireAuth, navigate }
 
   return (
