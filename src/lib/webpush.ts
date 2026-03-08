@@ -1,16 +1,25 @@
 import webpush from 'web-push'
 import { createClient } from '@supabase/supabase-js'
 
-webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT!,
-  process.env.VAPID_PUBLIC_KEY!,
-  process.env.VAPID_PRIVATE_KEY!
-)
-
 export const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
+
+let vapidInitialized = false
+
+function initVapid() {
+  if (vapidInitialized) return
+  if (!process.env.VAPID_SUBJECT || !process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
+    return
+  }
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT,
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  )
+  vapidInitialized = true
+}
 
 export interface PushPayload {
   title: string
@@ -23,6 +32,8 @@ export interface PushPayload {
 // Send a push to all subscriptions for a given user.
 // Silently removes stale/expired subscriptions (410 Gone).
 export async function sendPushToUser(userId: string, payload: PushPayload): Promise<void> {
+  initVapid()
+  if (!vapidInitialized) return
   const { data: subs } = await supabaseAdmin
     .from('push_subscriptions')
     .select('*')
