@@ -23,6 +23,7 @@ export interface Profile {
   trust_score: number
   review_count: number
   is_admin: boolean
+  suspended: boolean
   lat: number | null
   lng: number | null
   radius_miles: number | null
@@ -127,6 +128,18 @@ export interface ItemFlag {
   notes: string | null
   resolved: boolean
   created_at: string
+}
+
+export interface UserFlag {
+  id: string
+  reported_user_id: string
+  reporter_id: string
+  reason: 'scam' | 'harassment' | 'no_return' | 'fake_listing' | 'other'
+  notes: string | null
+  resolved: boolean
+  created_at: string
+  // joined
+  reported_user?: Pick<Profile, 'full_name' | 'email' | 'avatar_color' | 'trust_score' | 'suspended'>
 }
 
 // ─── App Context ───────────────────────────────────────────────────────────────
