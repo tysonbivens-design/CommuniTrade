@@ -3,29 +3,43 @@
   background: rgba(0,0,0,0.5);
   z-index: 200;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  /* Reserve space for top nav (60px) + bottom tab bar (56px) + breathing room */
-  padding: 72px 1rem calc(72px + env(safe-area-inset-bottom, 0px));
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  /* Top nav = 60px, bottom tab bar = 56px, +8px breathing room each side */
+  padding: 68px 1rem 68px;
+  padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+  /* Prevent background scroll — overlay itself does NOT scroll */
+  overflow: hidden;
 }
 .modal {
-  background: #fff; border-radius: 16px; padding: 2rem;
-  max-width: 500px; width: 100%;
+  background: #fff;
+  border-radius: 16px;
+  padding: 2rem;
+  max-width: 500px;
+  width: 100%;
   box-shadow: 0 24px 64px rgba(0,0,0,0.2);
   position: relative;
-  flex-shrink: 0;
-  margin: auto;
-  /* Scroll within modal if content is still too tall */
-  max-height: calc(100dvh - 144px - env(safe-area-inset-bottom, 0px));
+  /* Modal scrolls its own content — never taller than the gap between navbars */
+  max-height: calc(100dvh - 136px - env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 .close {
-  position: absolute; top: 1rem; right: 1rem;
-  background: none; border: none; font-size: 1.3rem; cursor: pointer; color: var(--muted);
-  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
-  border-radius: 50%; transition: all 0.2s;
+  position: sticky;
+  top: 0;
+  float: right;
+  margin: -0.5rem -0.5rem 0 0;
+  background: #fff;
+  border: none;
+  font-size: 1.3rem;
+  cursor: pointer;
+  color: var(--muted);
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s;
+  z-index: 1;
 }
 .close:hover { background: var(--cream); color: var(--bark); }
 .title { font-family: 'Fraunces', serif; font-size: 1.5rem; font-weight: 600; margin-bottom: 0.25rem; }
@@ -37,13 +51,13 @@
 .formRow { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
 
 @media (max-width: 768px) {
-  /* On mobile both navbars are visible — pad for both */
   .overlay {
     padding: 68px 0.75rem calc(68px + env(safe-area-inset-bottom, 0px));
+    align-items: flex-start;
   }
   .modal {
     border-radius: 14px;
-    padding: 1.5rem 1.25rem;
+    padding: 1.25rem 1rem;
     max-height: calc(100dvh - 136px - env(safe-area-inset-bottom, 0px));
   }
   .formRow { grid-template-columns: 1fr; }
