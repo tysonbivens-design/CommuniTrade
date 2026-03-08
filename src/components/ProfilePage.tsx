@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
 import ItemCard from './ItemCard'
 import Avatar from './Avatar'
+import PushPrompt from './PushPrompt'
 import styles from './ProfilePage.module.css'
 import modalStyles from './Modal.module.css'
 import type { Item, AppCtx, OfferType, Condition } from '@/types'
@@ -444,9 +445,10 @@ function ProfileSettingsForm({ userId, profile, onSaved, showToast }: ProfileSet
   }
 
   return (
-    <div style={{ maxWidth: 480 }}>
-      <h2 style={{ fontFamily: 'Fraunces, serif', fontSize: '1.2rem', marginBottom: '1.5rem' }}>Edit Profile</h2>
-      <form onSubmit={submit}>
+    <div style={{ maxWidth: 480, display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+      <div>
+        <h2 style={{ fontFamily: 'Fraunces, serif', fontSize: '1.2rem', marginBottom: '1.5rem' }}>Edit Profile</h2>
+        <form onSubmit={submit}>
         <div className="form-group">
           <label className="label">Display Name</label>
           <input
@@ -482,6 +484,12 @@ function ProfileSettingsForm({ userId, profile, onSaved, showToast }: ProfileSet
           {loading ? <span className="spinner" /> : 'Save Changes'}
         </button>
       </form>
+      </div>
+
+      <div>
+        <h2 style={{ fontFamily: 'Fraunces, serif', fontSize: '1.2rem', marginBottom: '1rem' }}>Notifications</h2>
+        <PushPrompt userId={userId} />
+      </div>
     </div>
   )
 }
