@@ -29,6 +29,9 @@ export default function AuthModal({ mode, onClose, onSuccess, showToast }: AuthM
   const [forgotEmail, setForgotEmail] = useState('')
   const [forgotLoading, setForgotLoading] = useState(false)
   const [form, setForm] = useState<AuthForm>({ email: '', password: '', full_name: '', zip_code: '' })
+  const [signedUpEmail, setSignedUpEmail] = useState<string | null>(null)
+  const [resendLoading, setResendLoading] = useState(false)
+  const [resendSent, setResendSent] = useState(false)
 
   const set = (k: keyof AuthForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
@@ -51,10 +54,13 @@ export default function AuthModal({ mode, onClose, onSuccess, showToast }: AuthM
         const { error } = await supabase.auth.signUp({
           email: form.email,
           password: form.password,
-          options: { data: { full_name: form.full_name, zip_code: form.zip_code } },
+          options: {
+            data: { full_name: form.full_name, zip_code: form.zip_code },
+            emailRedirectTo: `${window.location.origin}?type=signup`,
+          },
         })
         if (error) throw error
-        onSuccess('Welcome to CommuniTrade! 🎉 Check your email to confirm your account.')
+        setSignedUpEmail(form.email)
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message.toLowerCase() : ''
@@ -89,6 +95,56 @@ export default function AuthModal({ mode, onClose, onSuccess, showToast }: AuthM
     } finally {
       setForgotLoading(false)
     }
+  }
+
+
+  async function handleResend() {
+    if (!signedUpEmail) return
+    setResendLoading(true)
+    try {
+      await supabase.auth.resend({ type: 'signup', email: signedUpEmail })
+      setResendSent(true)
+      setTimeout(() => setResendSent(false), 5000)
+    } catch {
+      showToast('Could not resend. Please try again.', 'error')
+    } finally {
+      setResendLoading(false)
+    }
+  }
+
+  if (signedUpEmail) {
+    return (
+      <div className={styles.overlay}>
+        <div className={styles.modal} style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '3.5rem', marginBottom: '1rem' }}>📬</div>
+          <h2 className={styles.title} style={{ textAlign: 'center' }}>Check your email!</h2>
+          <p style={{ color: 'var(--muted)', fontSize: '0.95rem', lineHeight: 1.7, marginBottom: '1.5rem' }}>
+            We sent a confirmation link to<br />
+            <strong style={{ color: 'var(--bark)' }}>{signedUpEmail}</strong>
+          </p>
+          <div style={{ background: 'var(--cream)', borderRadius: 10, padding: '1rem 1.25rem', marginBottom: '1.5rem', fontSize: '0.85rem', color: 'var(--muted)', lineHeight: 1.6, textAlign: 'left' }}>
+            <p style={{ marginBottom: '0.4rem' }}>👆 Click the link in that email to activate your account.</p>
+            <p style={{ marginBottom: '0.4rem' }}>📁 Don't see it? Check your spam or junk folder.</p>
+            <p>⏱ The link expires after 24 hours.</p>
+          </div>
+          <button
+            className="btn btn-primary btn-lg"
+            style={{ width: '100%', marginBottom: '0.75rem' }}
+            onClick={handleResend}
+            disabled={resendLoading || resendSent}
+          >
+            {resendLoading ? <span className="spinner" /> : resendSent ? '✅ Sent! Check your inbox' : 'Resend confirmation email'}
+          </button>
+          <button
+            className="btn btn-outline btn-lg"
+            style={{ width: '100%' }}
+            onClick={() => { setSignedUpEmail(null); setIsLogin(true) }}
+          >
+            Already confirmed? Sign in
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (showForgot) {
