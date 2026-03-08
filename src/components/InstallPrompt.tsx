@@ -72,7 +72,7 @@ export default function InstallPrompt({ onDone }: InstallPromptProps) {
         </div>
 
         <h2 className={styles.title}>
-          {installed ? 'You're all set! 🎉' : 'Add CommuniTrade to your home screen'}
+          {installed ? "You're all set! 🎉" : 'Add CommuniTrade to your home screen'}
         </h2>
 
         {installed ? (
