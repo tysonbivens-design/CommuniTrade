@@ -385,6 +385,8 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
 }
 
 // ─── Profile Settings Form ────────────────────────────────────────────────────
+// REPLACE the existing ProfileSettingsForm function in src/components/ProfilePage.tsx
+// with this version. Everything above and below it stays the same.
 
 interface ProfileSettingsFormProps {
   userId: string
@@ -446,153 +448,60 @@ function ProfileSettingsForm({ userId, profile, onSaved, showToast }: ProfileSet
 
   return (
     <div style={{ maxWidth: 480, display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+
+      {/* ── Edit Profile ── */}
       <div>
         <h2 style={{ fontFamily: 'Fraunces, serif', fontSize: '1.2rem', marginBottom: '1.5rem' }}>Edit Profile</h2>
         <form onSubmit={submit}>
-        <div className="form-group">
-          <label className="label">Display Name</label>
-          <input
-            className="input"
-            value={form.full_name}
-            onChange={set('full_name')}
-            placeholder="Your name"
-            required
-          />
-        </div>
-        <div className="form-group">
-          <label className="label">Zip Code</label>
-          <input
-            className="input"
-            value={form.zip_code}
-            onChange={set('zip_code')}
-            placeholder="12345"
-            maxLength={5}
-            pattern="\d{5}"
-            title="5-digit US zip code"
-            required
-          />
-          <p style={{ fontSize: '0.78rem', color: 'var(--muted)', marginTop: '0.35rem' }}>
-            Changing your zip will update your location for radius filtering.
-          </p>
-        </div>
-        <button
-          type="submit"
-          className="btn btn-primary"
-          style={{ minWidth: 140 }}
-          disabled={loading}
-        >
-          {loading ? <span className="spinner" /> : 'Save Changes'}
-        </button>
-      </form>
-      </div>
-
-      <div>
-        <h2 style={{ fontFamily: 'Fraunces, serif', fontSize: '1.2rem', marginBottom: '1rem' }}>Notifications</h2>
-        <PushPrompt userId={userId} />
-      </div>
-    </div>
-  )
-}
-
-// ─── Edit Item Modal ───────────────────────────────────────────────────────────
-
-interface EditItemModalProps {
-  item: Item
-  onClose: () => void
-  onSave: (updated: Item) => void
-  showToast: AppCtx['showToast']
-}
-
-const OFFER_OPTIONS: { value: OfferType; label: string }[] = [
-  { value: 'lend',   label: '🤝 Lend / Borrow' },
-  { value: 'swap',   label: '🔄 Permanent Swap' },
-  { value: 'barter', label: '⚖️ Barter' },
-  { value: 'free',   label: '🎁 Free / Give Away' },
-]
-
-const CONDITION_OPTIONS: { value: Condition; label: string }[] = [
-  { value: 'excellent', label: 'Excellent' },
-  { value: 'good',      label: 'Good' },
-  { value: 'fair',      label: 'Fair' },
-]
-
-function EditItemModal({ item, onClose, onSave, showToast }: EditItemModalProps) {
-  const supabase = createBrowserClient()
-  const [loading, setLoading] = useState(false)
-  const [form, setForm] = useState({
-    title: item.title,
-    author_creator: item.author_creator ?? '',
-    offer_type: item.offer_type,
-    condition: item.condition,
-    notes: item.notes ?? '',
-  })
-
-  const set = (k: keyof typeof form) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
-      setForm(f => ({ ...f, [k]: e.target.value }))
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault()
-    setLoading(true)
-    try {
-      const patch = {
-        title: form.title,
-        author_creator: form.author_creator || null,
-        offer_type: form.offer_type,
-        condition: form.condition,
-        notes: form.notes || null,
-      }
-      const { error } = await supabase.from('items').update(patch).eq('id', item.id)
-      if (error) throw error
-      onSave({ ...item, ...patch })
-    } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : 'Could not save changes', 'error')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div className={modalStyles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className={modalStyles.modal}>
-        <button className={modalStyles.close} onClick={onClose}>✕</button>
-        <h2 className={modalStyles.title}>Edit Item</h2>
-        <p className={modalStyles.subtitle} style={{ marginBottom: '1.25rem' }}>
-          {item.category} · Currently <strong style={{ color: item.status === 'available' ? 'var(--sage)' : 'var(--muted)' }}>{item.status}</strong>
-        </p>
-
-        <form onSubmit={submit}>
           <div className="form-group">
-            <label className="label">Title</label>
-            <input className="input" value={form.title} onChange={set('title')} required />
+            <label className="label">Display Name</label>
+            <input
+              className="input"
+              value={form.full_name}
+              onChange={set('full_name')}
+              placeholder="Your name"
+              required
+            />
           </div>
           <div className="form-group">
-            <label className="label">Author / Creator</label>
-            <input className="input" value={form.author_creator} onChange={set('author_creator')} placeholder="e.g. Toni Morrison, Stanley Kubrick…" />
+            <label className="label">Zip Code</label>
+            <input
+              className="input"
+              value={form.zip_code}
+              onChange={set('zip_code')}
+              placeholder="12345"
+              maxLength={5}
+              pattern="\d{5}"
+              title="5-digit US zip code"
+              required
+            />
+            <p style={{ fontSize: '0.78rem', color: 'var(--muted)', marginTop: '0.35rem' }}>
+              Changing your zip will update your location for radius filtering.
+            </p>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-            <div className="form-group">
-              <label className="label">Offer Type</label>
-              <select className="input" value={form.offer_type} onChange={set('offer_type')}>
-                {OFFER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="label">Condition</label>
-              <select className="input" value={form.condition} onChange={set('condition')}>
-                {CONDITION_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="form-group">
-            <label className="label">Notes</label>
-            <textarea className="input" rows={2} value={form.notes} onChange={set('notes')} placeholder="Any details worth knowing…" />
-          </div>
-          <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            style={{ minWidth: 140 }}
+            disabled={loading}
+          >
             {loading ? <span className="spinner" /> : 'Save Changes'}
           </button>
         </form>
       </div>
+
+      {/* ── Notifications ── */}
+      <div>
+        <h2 style={{ fontFamily: 'Fraunces, serif', fontSize: '1.2rem', marginBottom: '0.4rem' }}>
+          Notifications
+        </h2>
+        <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '1.25rem', lineHeight: 1.6 }}>
+          Push notifications let you know instantly when someone wants to borrow your items,
+          a barter match is found, or a return is due — no email required.
+        </p>
+        <PushPrompt userId={userId} />
+      </div>
+
     </div>
   )
 }
