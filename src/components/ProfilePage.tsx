@@ -505,3 +505,119 @@ function ProfileSettingsForm({ userId, profile, onSaved, showToast }: ProfileSet
     </div>
   )
 }
+// ─── Edit Item Modal ──────────────────────────────────────────────────────────
+
+const OFFER_OPTIONS = [
+  { value: 'lend', label: 'Available to Lend' },
+  { value: 'give', label: 'Free to Keep' },
+  { value: 'barter', label: 'Open to Barter' },
+]
+
+const CONDITION_OPTIONS = [
+  { value: 'like_new', label: 'Like New' },
+  { value: 'good', label: 'Good' },
+  { value: 'fair', label: 'Fair' },
+  { value: 'worn', label: 'Worn' },
+]
+
+const CATEGORY_OPTIONS = [
+  'Book', 'DVD', 'VHS', 'CD', 'Game', 'Tool', 'Home Good', 'Other',
+]
+
+interface EditItemModalProps {
+  item: Item
+  onClose: () => void
+  onSave: () => void
+  showToast: AppCtx['showToast']
+}
+
+function EditItemModal({ item, onClose, onSave, showToast }: EditItemModalProps) {
+  const supabase = createBrowserClient()
+  const [loading, setLoading] = useState(false)
+  const [form, setForm] = useState({
+    title: item.title || '',
+    author_creator: item.author_creator || '',
+    offer_type: item.offer_type || 'lend',
+    condition: item.condition || 'good',
+    category: item.category || 'Book',
+    notes: item.notes || '',
+  })
+
+  const set = (k: keyof typeof form) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+      setForm(f => ({ ...f, [k]: e.target.value }))
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    try {
+      const { error } = await supabase
+        .from('items')
+        .update({
+          title: form.title.trim(),
+          author_creator: form.author_creator.trim(),
+          offer_type: form.offer_type as OfferType,
+          condition: form.condition as Condition,
+          category: form.category,
+          notes: form.notes.trim(),
+        })
+        .eq('id', item.id)
+      if (error) throw error
+      onSave()
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Could not save changes', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className={modalStyles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className={modalStyles.modal}>
+        <button className={modalStyles.close} onClick={onClose}>✕</button>
+        <h2 className={modalStyles.title}>Edit Item</h2>
+        <p className={modalStyles.subtitle} style={{ marginBottom: '1.25rem' }}>
+          Currently <strong style={{ color: item.status === 'available' ? 'var(--sage)' : 'var(--muted)' }}>{item.status}</strong>
+        </p>
+
+        <form onSubmit={submit}>
+          <div className="form-group">
+            <label className="label">Title</label>
+            <input className="input" value={form.title} onChange={set('title')} required />
+          </div>
+          <div className="form-group">
+            <label className="label">Author / Creator</label>
+            <input className="input" value={form.author_creator} onChange={set('author_creator')} placeholder="e.g. Toni Morrison, Stanley Kubrick…" />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <div className="form-group">
+              <label className="label">Category</label>
+              <select className="input" value={form.category} onChange={set('category')}>
+                {CATEGORY_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="label">Offer Type</label>
+              <select className="input" value={form.offer_type} onChange={set('offer_type')}>
+                {OFFER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="label">Condition</label>
+            <select className="input" value={form.condition} onChange={set('condition')}>
+              {CONDITION_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="label">Notes</label>
+            <textarea className="input" rows={2} value={form.notes} onChange={set('notes')} placeholder="Any details worth knowing…" />
+          </div>
+          <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
+            {loading ? <span className="spinner" /> : 'Save Changes'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
