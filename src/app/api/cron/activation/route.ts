@@ -1,4 +1,3 @@
-test
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin, resend, emailTemplate, esc, FROM, APP_URL } from '@/lib/email'
 import { sendPushToUser } from '@/lib/webpush'
