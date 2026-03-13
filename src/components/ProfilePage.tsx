@@ -112,7 +112,6 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
     const file = e.target.files?.[0]
     if (!file || !userId) return
 
-    // Validate: image only, max 5MB
     if (!file.type.startsWith('image/')) {
       showToast('Please select an image file', 'error')
       return
@@ -137,7 +136,6 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
         .from('avatars')
         .getPublicUrl(path)
 
-      // Bust cache by appending timestamp
       const urlWithBust = `${publicUrl}?t=${Date.now()}`
 
       const { error: updateError } = await supabase
@@ -153,7 +151,6 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
       showToast(err instanceof Error ? err.message : 'Upload failed', 'error')
     } finally {
       setUploadingAvatar(false)
-      // Reset input so same file can be re-selected
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
@@ -192,7 +189,6 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
                 style={{ border: '3px solid var(--gold)', fontSize: '2.2rem', fontFamily: 'Fraunces, serif', fontWeight: 600 }}
               />
 
-              {/* Upload button overlay */}
               <button
                 className={styles.editAvatarBtn}
                 onClick={() => fileInputRef.current?.click()}
@@ -210,7 +206,6 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
                 onChange={handleAvatarUpload}
               />
 
-              {/* Color picker toggle — shown below upload btn */}
               <button
                 onClick={() => setEditColor(!editColor)}
                 title="Change color"
@@ -311,22 +306,12 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
                           color: '#fff', border: 'none', borderRadius: 6,
                           padding: '0.2rem 0.5rem', fontSize: '0.72rem',
                           cursor: item.status === 'loaned' ? 'not-allowed' : 'pointer',
+                          backdropFilter: 'blur(4px)',
                         }}
                       >
-                        Remove
+                        🗑 Remove
                       </button>
                     </div>
-
-                    {item.status === 'loaned' && (
-                      <div style={{
-                        position: 'absolute', bottom: '0.5rem', left: '0.5rem', right: '0.5rem',
-                        background: 'rgba(61,43,31,0.7)', color: '#fff', borderRadius: 6,
-                        padding: '0.25rem 0.5rem', fontSize: '0.7rem', textAlign: 'center',
-                        pointerEvents: 'none',
-                      }}>
-                        Currently on loan — editing locked
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>
@@ -337,21 +322,16 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
             reviews.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}>
                 <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>⭐</div>
-                <p>No reviews yet — complete a loan to receive your first!</p>
+                <p>No reviews yet. Complete a loan to receive your first review!</p>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 {reviews.map(r => (
-                  <div key={r.id} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: '1rem 1.25rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                      <Avatar
-                        name={r.reviewer?.full_name}
-                        avatarUrl={r.reviewer?.avatar_url}
-                        color={r.reviewer?.avatar_color}
-                        size={28}
-                      />
-                      <strong style={{ fontSize: '0.9rem' }}>{r.reviewer?.full_name}</strong>
-                      <span>{'⭐'.repeat(r.rating)}</span>
+                  <div key={r.id} style={{ background: 'var(--cream)', borderRadius: 12, padding: '1rem 1.25rem', border: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem' }}>
+                      <Avatar name={r.reviewer?.full_name} avatarUrl={r.reviewer?.avatar_url} color={r.reviewer?.avatar_color} size={28} />
+                      <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>{r.reviewer?.full_name || 'Neighbor'}</span>
+                      <span style={{ color: 'var(--gold)', fontSize: '0.88rem' }}>{'⭐'.repeat(r.rating)}</span>
                       <span style={{ fontSize: '0.78rem', color: 'var(--muted)', marginLeft: 'auto' }}>{new Date(r.created_at).toLocaleDateString()}</span>
                     </div>
                     {r.comment && <p style={{ fontSize: '0.88rem', color: 'var(--muted)', fontStyle: 'italic' }}>"{r.comment}"</p>}
@@ -385,8 +365,6 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
 }
 
 // ─── Profile Settings Form ────────────────────────────────────────────────────
-// REPLACE the existing ProfileSettingsForm function in src/components/ProfilePage.tsx
-// with this version. Everything above and below it stays the same.
 
 interface ProfileSettingsFormProps {
   userId: string
@@ -403,7 +381,6 @@ function ProfileSettingsForm({ userId, profile, onSaved, showToast }: ProfileSet
     zip_code: profile?.zip_code || '',
   })
 
-  // Keep form in sync if profile loads after mount
   useEffect(() => {
     if (profile) setForm({ full_name: profile.full_name || '', zip_code: profile.zip_code || '' })
   }, [profile?.full_name, profile?.zip_code])
@@ -421,7 +398,6 @@ function ProfileSettingsForm({ userId, profile, onSaved, showToast }: ProfileSet
         zip_code: form.zip_code.trim(),
       }
 
-      // Re-geocode if zip changed
       if (form.zip_code.trim() !== profile?.zip_code) {
         try {
           const res = await fetch(`https://api.zippopotam.us/us/${form.zip_code.trim()}`)
@@ -505,6 +481,7 @@ function ProfileSettingsForm({ userId, profile, onSaved, showToast }: ProfileSet
     </div>
   )
 }
+
 // ─── Edit Item Modal ──────────────────────────────────────────────────────────
 
 const OFFER_OPTIONS = [
@@ -527,7 +504,7 @@ const CATEGORY_OPTIONS = [
 interface EditItemModalProps {
   item: Item
   onClose: () => void
-  onSave: () => void
+  onSave: (updated: Item) => void
   showToast: AppCtx['showToast']
 }
 
@@ -563,7 +540,7 @@ function EditItemModal({ item, onClose, onSave, showToast }: EditItemModalProps)
         })
         .eq('id', item.id)
       if (error) throw error
-      onSave()
+      onSave({ ...item, ...form } as Item)
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : 'Could not save changes', 'error')
     } finally {
