@@ -179,7 +179,6 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
         <div className="container">
           <div className={styles.headerInner}>
 
-            {/* ── Avatar with edit controls ── */}
             <div style={{ position: 'relative', display: 'inline-block' }}>
               <Avatar
                 name={profile?.full_name}
@@ -236,7 +235,6 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
               )}
             </div>
 
-            {/* ── Name / meta ── */}
             <div>
               <h1 className={styles.name}>{profile?.full_name || 'Community Member'}</h1>
               <p className={styles.meta}>
@@ -245,7 +243,6 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
               <div className={styles.trustRing}>⭐ {profile?.trust_score?.toFixed(1) || '5.0'} Trust Score · {profile?.review_count || 0} reviews</div>
             </div>
 
-            {/* ── Stats ── */}
             <div className={styles.profileStats}>
               <div className={styles.pStat}><div className={styles.pStatNum}>{stats.shared}</div><div className={styles.pStatLabel}>Items Shared</div></div>
               <div className={styles.pStat}><div className={styles.pStatNum}>{stats.loans}</div><div className={styles.pStatLabel}>Loans Completed</div></div>
@@ -511,6 +508,7 @@ interface EditItemModalProps {
 function EditItemModal({ item, onClose, onSave, showToast }: EditItemModalProps) {
   const supabase = createBrowserClient()
   const [loading, setLoading] = useState(false)
+  const [fetchingCover, setFetchingCover] = useState(false)
   const [form, setForm] = useState({
     title: item.title || '',
     author_creator: item.author_creator || '',
@@ -519,34 +517,75 @@ function EditItemModal({ item, onClose, onSave, showToast }: EditItemModalProps)
     category: item.category || 'Book',
     notes: item.notes || '',
   })
+  const [coverUrl, setCoverUrl] = useState<string | null>(item.cover_image_url)
 
   const set = (k: keyof typeof form) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
       setForm(f => ({ ...f, [k]: e.target.value }))
 
+  async function fetchCover() {
+    if (!form.title) return
+    setFetchingCover(true)
+    try {
+      let url: string | null = null
+
+      if (form.category === 'Book') {
+        const res = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(form.title)}&limit=1`)
+        const data = await res.json()
+        if (data.docs?.[0]?.cover_i) {
+          url = `https://covers.openlibrary.org/b/id/${data.docs[0].cover_i}-M.jpg`
+        }
+      } else if (form.category === 'DVD' || form.category === 'VHS') {
+        const res = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(form.title)}&apikey=${process.env.NEXT_PUBLIC_OMDB_API_KEY || 'd5714ece'}`)
+        const data = await res.json()
+        if (data.Poster && data.Poster !== 'N/A') url = data.Poster
+      } else if (form.category === 'Game') {
+        const res = await fetch('/api/igdb', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: form.title }),
+        })
+        const data = await res.json()
+        if (data.cover_url) url = data.cover_url
+      }
+
+      if (url) {
+        setCoverUrl(url)
+        showToast('Cover art found! Save to keep it.')
+      } else {
+        showToast('No cover found for this title.', 'error')
+      }
+    } catch {
+      showToast('Could not fetch cover art.', 'error')
+    } finally {
+      setFetchingCover(false)
+    }
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     try {
-      const { error } = await supabase
-        .from('items')
-        .update({
-          title: form.title.trim(),
-          author_creator: form.author_creator.trim(),
-          offer_type: form.offer_type as OfferType,
-          condition: form.condition as Condition,
-          category: form.category,
-          notes: form.notes.trim(),
-        })
-        .eq('id', item.id)
+      const patch = {
+        title: form.title.trim(),
+        author_creator: form.author_creator.trim() || null,
+        offer_type: form.offer_type as OfferType,
+        condition: form.condition as Condition,
+        category: form.category,
+        notes: form.notes.trim() || null,
+        cover_image_url: coverUrl,
+      }
+      const { error } = await supabase.from('items').update(patch).eq('id', item.id)
       if (error) throw error
-      onSave({ ...item, ...form } as Item)
+      onSave({ ...item, ...patch } as Item)
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : 'Could not save changes', 'error')
     } finally {
       setLoading(false)
     }
   }
+
+  const canFetchCover = ['Book', 'DVD', 'VHS', 'Game'].includes(form.category)
 
   return (
     <div className={modalStyles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
@@ -590,6 +629,39 @@ function EditItemModal({ item, onClose, onSave, showToast }: EditItemModalProps)
             <label className="label">Notes</label>
             <textarea className="input" rows={2} value={form.notes} onChange={set('notes')} placeholder="Any details worth knowing…" />
           </div>
+
+          {/* ── Cover art ── */}
+          {canFetchCover && (
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label className="label">Cover Art</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                {coverUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={coverUrl} alt="cover" style={{ width: 48, height: 64, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--border)', flexShrink: 0 }} />
+                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    onClick={fetchCover}
+                    disabled={fetchingCover || !form.title}
+                  >
+                    {fetchingCover ? <span className="spinner" /> : coverUrl ? '🔄 Re-fetch Cover' : '🎨 Fetch Cover Art'}
+                  </button>
+                  {coverUrl && (
+                    <button
+                      type="button"
+                      style={{ background: 'none', border: 'none', fontSize: '0.75rem', color: 'var(--muted)', cursor: 'pointer', textAlign: 'left', padding: 0 }}
+                      onClick={() => setCoverUrl(null)}
+                    >
+                      Remove cover
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
             {loading ? <span className="spinner" /> : 'Save Changes'}
           </button>
