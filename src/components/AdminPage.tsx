@@ -21,9 +21,10 @@ interface FlaggedUser {
   flag_count: number
 }
 
-interface GameItem {
+interface CoverItem {
   id: string
   title: string
+  category: string
   cover_image_url: string | null
 }
 
@@ -39,6 +40,10 @@ function EmptyState({ icon, title, body }: { icon: string; title: string; body: 
       <p>{body}</p>
     </div>
   )
+}
+
+const CATEGORY_EMOJI: Record<string, string> = {
+  Book: '📚', DVD: '🎬', VHS: '📼', Game: '🎮',
 }
 
 export default function AdminPage({ ctx }: AdminPageProps) {
@@ -61,8 +66,8 @@ export default function AdminPage({ ctx }: AdminPageProps) {
   const [userOffset, setUserOffset] = useState(0)
   const [usersLoaded, setUsersLoaded] = useState(false)
 
-  // ── Game covers state ─────────────────────────────────────────────────────
-  const [gameItems, setGameItems] = useState<GameItem[]>([])
+  // ── Cover backfill state ──────────────────────────────────────────────────
+  const [coverItems, setCoverItems] = useState<CoverItem[]>([])
   const [loadingCovers, setLoadingCovers] = useState(false)
   const [coversLoaded, setCoversLoaded] = useState(false)
   const [fetchingAll, setFetchingAll] = useState(false)
@@ -76,7 +81,7 @@ export default function AdminPage({ ctx }: AdminPageProps) {
       setUsersLoaded(true)
     }
     if (tab === 'covers' && !coversLoaded) {
-      loadGameItems()
+      loadCoverItems()
       setCoversLoaded(true)
     }
   }, [tab])
@@ -170,68 +175,81 @@ export default function AdminPage({ ctx }: AdminPageProps) {
     showToast('Reports dismissed')
   }
 
-  // ── Game cover backfill ───────────────────────────────────────────────────
+  // ── Cover backfill ────────────────────────────────────────────────────────
 
-  async function loadGameItems() {
+  async function loadCoverItems() {
     setLoadingCovers(true)
     const { data } = await supabase
       .from('items')
-      .select('id, title, cover_image_url')
-      .eq('category', 'Game')
+      .select('id, title, category, cover_image_url')
+      .in('category', ['Book', 'DVD', 'VHS', 'Game'])
       .eq('archived', false)
-      .order('created_at', { ascending: false })
-    setGameItems((data as GameItem[]) || [])
+      .order('category')
+      .order('title')
+    setCoverItems((data as CoverItem[]) || [])
     setLoadingCovers(false)
   }
 
-  async function fetchCoverForItem(item: GameItem): Promise<string | null> {
+  async function fetchCoverUrl(item: CoverItem): Promise<string | null> {
     try {
-      const res = await fetch('/api/igdb', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: item.title }),
-      })
-      const data = await res.json()
-      return data.cover_url || null
-    } catch {
-      return null
-    }
+      if (item.category === 'Book') {
+        const res = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(item.title)}&limit=1`)
+        const data = await res.json()
+        if (data.docs?.[0]?.cover_i) {
+          return `https://covers.openlibrary.org/b/id/${data.docs[0].cover_i}-M.jpg`
+        }
+      } else if (item.category === 'DVD' || item.category === 'VHS') {
+        const res = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(item.title)}&apikey=${process.env.NEXT_PUBLIC_OMDB_API_KEY || 'd5714ece'}`)
+        const data = await res.json()
+        if (data.Poster && data.Poster !== 'N/A') return data.Poster
+      } else if (item.category === 'Game') {
+        const res = await fetch('/api/igdb', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: item.title }),
+        })
+        const data = await res.json()
+        if (data.cover_url) return data.cover_url
+      }
+    } catch { /* silent */ }
+    return null
   }
 
-  async function fetchSingleCover(item: GameItem) {
-    const url = await fetchCoverForItem(item)
+  async function fetchSingleCover(item: CoverItem) {
+    const url = await fetchCoverUrl(item)
     if (!url) { showToast(`No cover found for "${item.title}"`, 'error'); return }
     const { error } = await supabase.from('items').update({ cover_image_url: url }).eq('id', item.id)
     if (error) { showToast(error.message, 'error'); return }
-    setGameItems(prev => prev.map(g => g.id === item.id ? { ...g, cover_image_url: url } : g))
+    setCoverItems(prev => prev.map(c => c.id === item.id ? { ...c, cover_image_url: url } : c))
     showToast(`Cover updated for "${item.title}" ✅`)
   }
 
   async function fetchAllMissingCovers() {
-    const missing = gameItems.filter(g => !g.cover_image_url)
-    if (!missing.length) { showToast('All games already have cover art!'); return }
-    if (!window.confirm(`Fetch covers for ${missing.length} game${missing.length !== 1 ? 's' : ''}? This may take a moment.`)) return
+    const missing = coverItems.filter(c => !c.cover_image_url)
+    if (!missing.length) { showToast('All items already have cover art!'); return }
+    if (!window.confirm(`Fetch covers for ${missing.length} item${missing.length !== 1 ? 's' : ''}? This may take a moment.`)) return
 
     setFetchingAll(true)
     setFetchProgress({ done: 0, total: missing.length })
     let updated = 0
 
     for (const item of missing) {
-      const url = await fetchCoverForItem(item)
+      const url = await fetchCoverUrl(item)
       if (url) {
         await supabase.from('items').update({ cover_image_url: url }).eq('id', item.id)
-        setGameItems(prev => prev.map(g => g.id === item.id ? { ...g, cover_image_url: url } : g))
+        setCoverItems(prev => prev.map(c => c.id === item.id ? { ...c, cover_image_url: url } : c))
         updated++
       }
       setFetchProgress(p => p ? { ...p, done: p.done + 1 } : null)
-      // Small delay to be polite to the IGDB API
-      await new Promise(r => setTimeout(r, 300))
+      await new Promise(r => setTimeout(r, 250))
     }
 
     setFetchingAll(false)
     setFetchProgress(null)
-    showToast(`Done! Updated ${updated} of ${missing.length} games ✅`)
+    showToast(`Done! Updated ${updated} of ${missing.length} items ✅`)
   }
+
+  const missingCount = coverItems.filter(c => !c.cover_image_url).length
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -260,7 +278,12 @@ export default function AdminPage({ ctx }: AdminPageProps) {
               )}
             </button>
             <button className={`tab ${tab === 'covers' ? 'active' : ''}`} onClick={() => setTab('covers')}>
-              🎮 Game Covers
+              🖼 Cover Art
+              {coversLoaded && missingCount > 0 && (
+                <span style={{ background: 'var(--gold)', color: 'var(--bark)', borderRadius: 10, padding: '0.05rem 0.4rem', fontSize: '0.72rem', marginLeft: '0.3rem' }}>
+                  {missingCount}
+                </span>
+              )}
             </button>
           </div>
 
@@ -392,66 +415,69 @@ export default function AdminPage({ ctx }: AdminPageProps) {
             )
           )}
 
-          {/* ── GAME COVERS ── */}
+          {/* ── COVER ART ── */}
           {tab === 'covers' && (
             loadingCovers ? <p style={{ color: 'var(--muted)' }}>Loading…</p>
-            : gameItems.length === 0 ? (
-              <EmptyState icon="🎮" title="No games in the library" body="Games will appear here once members add them." />
+            : coverItems.length === 0 ? (
+              <EmptyState icon="🖼" title="No eligible items" body="Books, DVDs, VHS tapes, and Games will appear here once members add them." />
             ) : (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
                   <p style={{ color: 'var(--muted)', fontSize: '0.88rem' }}>
-                    {gameItems.filter(g => g.cover_image_url).length} of {gameItems.length} games have cover art
+                    {coverItems.filter(c => c.cover_image_url).length} of {coverItems.length} items have cover art
+                    {missingCount > 0 && ` · ${missingCount} missing`}
                   </p>
                   <button
                     className="btn btn-primary btn-sm"
                     onClick={fetchAllMissingCovers}
-                    disabled={fetchingAll || gameItems.every(g => g.cover_image_url)}
+                    disabled={fetchingAll || missingCount === 0}
                   >
                     {fetchingAll
                       ? fetchProgress
                         ? `Fetching… ${fetchProgress.done}/${fetchProgress.total}`
                         : 'Fetching…'
-                      : `🎨 Fetch All Missing Covers (${gameItems.filter(g => !g.cover_image_url).length})`}
+                      : `🖼 Fetch All Missing (${missingCount})`}
                   </button>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  {gameItems.map(game => (
-                    <div key={game.id} style={{
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                  {coverItems.map(item => (
+                    <div key={item.id} style={{
                       display: 'flex', alignItems: 'center', gap: '1rem',
                       background: '#fff', borderRadius: 10, padding: '0.75rem 1rem',
                       border: '1px solid var(--border)', boxShadow: '0 1px 4px var(--shadow)',
                     }}>
-                      {/* Cover thumbnail */}
+                      {/* Thumbnail */}
                       <div style={{
-                        width: 40, height: 54, borderRadius: 4, overflow: 'hidden', flexShrink: 0,
+                        width: 36, height: 50, borderRadius: 3, overflow: 'hidden', flexShrink: 0,
                         background: 'var(--cream)', display: 'flex', alignItems: 'center', justifyContent: 'center',
                         border: '1px solid var(--border)',
                       }}>
-                        {game.cover_image_url
+                        {item.cover_image_url
                           // eslint-disable-next-line @next/next/no-img-element
-                          ? <img src={game.cover_image_url} alt={game.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          : <span style={{ fontSize: '1.2rem' }}>🎮</span>
+                          ? <img src={item.cover_image_url} alt={item.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : <span style={{ fontSize: '1rem' }}>{CATEGORY_EMOJI[item.category] || '📦'}</span>
                         }
                       </div>
 
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {game.title}
+                        <div style={{ fontWeight: 600, fontSize: '0.88rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {item.title}
                         </div>
-                        <div style={{ fontSize: '0.78rem', color: game.cover_image_url ? 'var(--sage)' : 'var(--muted)' }}>
-                          {game.cover_image_url ? '✅ Has cover art' : '⬜ No cover art'}
+                        <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+                          {item.category} · {item.cover_image_url
+                            ? <span style={{ color: 'var(--sage)' }}>✅ Has cover</span>
+                            : <span>⬜ Missing</span>}
                         </div>
                       </div>
 
                       <button
                         className="btn btn-outline btn-sm"
-                        onClick={() => fetchSingleCover(game)}
+                        onClick={() => fetchSingleCover(item)}
                         disabled={fetchingAll}
                         style={{ flexShrink: 0 }}
                       >
-                        {game.cover_image_url ? '🔄 Re-fetch' : '🎨 Fetch'}
+                        {item.cover_image_url ? '🔄 Re-fetch' : '🖼 Fetch'}
                       </button>
                     </div>
                   ))}
