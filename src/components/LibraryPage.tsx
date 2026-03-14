@@ -22,7 +22,6 @@ const CAT_LABELS: Record<string, string> = {
 const OFFER_LABELS: Record<string, string> = {
   '': 'Any Type', lend: '🤝 Lend', swap: '🔄 Swap', barter: '⚖️ Barter', free: '🎁 Free',
 }
-// Categories where genre filtering makes sense
 const GENRE_CATEGORIES = new Set(['Book', 'DVD', 'VHS', 'CD'])
 
 function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -34,6 +33,17 @@ function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): 
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
+// ─── Shared IGDB helper (client-side, calls our API route) ───────────────────
+async function fetchIGDBCover(title: string): Promise<{ cover_url: string | null; year: number | null; genres: string[] }> {
+  const res = await fetch('/api/igdb', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  })
+  if (!res.ok) return { cover_url: null, year: null, genres: [] }
+  return res.json()
+}
+
 export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx: AppCtx; initialModal?: 'add' | 'ai' | null; onModalOpened?: () => void }) {
   const { user, profile, showToast, requireAuth } = ctx
   const supabase = createBrowserClient()
@@ -43,21 +53,18 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Filters
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [category, setCategory] = useState('')
   const [offerType, setOfferType] = useState('')
   const [genre, setGenre] = useState('')
 
-  // Modals
   const [showAdd, setShowAdd] = useState(false)
   const [borrowItem, setBorrowItem] = useState<Item | null>(null)
   const [flagItem, setFlagItem] = useState<Item | null>(null)
   const [reportUser, setReportUser] = useState<{ userId: string; userName: string } | null>(null)
   const [showAI, setShowAI] = useState(false)
 
-  // Open modal immediately if navigated here with one pending
   useEffect(() => {
     if (!initialModal) return
     if (initialModal === 'add') requireAuth(() => setShowAdd(true))
@@ -70,7 +77,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
     return () => clearTimeout(timer)
   }, [search])
 
-  // Reset pagination and genre when top-level filters change
   useEffect(() => {
     setVisibleCount(PAGE_SIZE)
     setGenre('')
@@ -98,8 +104,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
 
       if (category) q = q.eq('category', category)
       if (offerType) q = q.eq('offer_type', offerType)
-
-      // Search both title and author_creator
       if (debouncedSearch) {
         q = q.or(`title.ilike.%${debouncedSearch}%,author_creator.ilike.%${debouncedSearch}%`)
       }
@@ -115,7 +119,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
 
       let results = (data as Item[]) || []
 
-      // Client-side radius filter
       if (userId && userLat && userLng && radiusMiles) {
         results = results.filter(item => {
           if (item.user_id === userId) return true
@@ -132,7 +135,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
     return () => { cancelled = true }
   }, [category, offerType, debouncedSearch, userId, userLat, userLng, radiusMiles])
 
-  // Derive available genres from current result set (only for genre-relevant categories)
   const availableGenres = useMemo(() => {
     if (!category || !GENRE_CATEGORIES.has(category)) return []
     const genres = new Set<string>()
@@ -143,7 +145,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
     return Array.from(genres).sort()
   }, [allItems, category])
 
-  // Client-side genre filter (applied on top of DB results)
   const filteredItems = useMemo(() => {
     if (!genre) return allItems
     return allItems.filter(item => item.metadata?.genre === genre)
@@ -152,8 +153,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
   const visibleItems = filteredItems.slice(0, visibleCount)
   const hasMore = visibleCount < filteredItems.length
   const radiusNote = userId && radiusMiles ? `Showing items within ${radiusMiles} miles of you` : null
-
-  // Active filter count for the clear button
   const activeFilterCount = [offerType, genre].filter(Boolean).length
 
   return (
@@ -163,7 +162,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
           <h1 className="section-title">Community Library</h1>
           <p className="section-subtitle">{radiusNote ?? 'Browse, borrow, and lend with your neighbors'}</p>
 
-          {/* Search + Add */}
           <div className={styles.searchRow}>
             <div className={styles.searchWrap}>
               <span className={styles.searchIcon}>🔍</span>
@@ -184,7 +182,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
             </div>
           </div>
 
-          {/* Category tabs */}
           <div className="tabs">
             {Object.entries(CAT_LABELS).map(([val, label]) => (
               <button key={val} className={`tab ${category === val ? 'active' : ''}`} onClick={() => setCategory(val)}>
@@ -193,9 +190,7 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
             ))}
           </div>
 
-          {/* Secondary filters row */}
           <div className={styles.filtersRow}>
-            {/* Offer type pills */}
             <div className={styles.filterGroup}>
               {Object.entries(OFFER_LABELS).map(([val, label]) => (
                 <button
@@ -208,7 +203,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
               ))}
             </div>
 
-            {/* Genre pills — only shown when a genre-relevant category is selected and genres exist */}
             {availableGenres.length > 0 && (
               <div className={styles.filterGroup}>
                 <button
@@ -221,35 +215,19 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
                   <button
                     key={g}
                     className={`${styles.filterPill} ${genre === g ? styles.filterPillActive : ''}`}
-                    onClick={() => { setGenre(g); setVisibleCount(PAGE_SIZE) }}
+                    onClick={() => setGenre(g)}
                   >
                     {g}
                   </button>
                 ))}
               </div>
             )}
-
-            {/* Clear filters */}
-            {activeFilterCount > 0 && (
-              <button
-                className={styles.clearFilters}
-                onClick={() => { setOfferType(''); setGenre('') }}
-              >
-                ✕ Clear filters
-              </button>
-            )}
           </div>
 
           {loading ? (
-            <div className={styles.loadingGrid}>
-              {[...Array(8)].map((_, i) => <div key={i} className={styles.skeleton} />)}
-            </div>
+            <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>Loading…</div>
           ) : error ? (
-            <div className={styles.empty}>
-              <div className={styles.emptyIcon}>⚠️</div>
-              <h3>Something went wrong</h3>
-              <p>{error}</p>
-            </div>
+            <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}>⚠️ {error}</div>
           ) : filteredItems.length === 0 ? (
             <div className={styles.empty}>
               <div className={styles.emptyIcon}>📚</div>
@@ -298,8 +276,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
               )}
             </>
           )}
-
-
         </div>
       </div>
 
@@ -376,8 +352,9 @@ function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalPro
     e.preventDefault()
     setLoading(true)
     try {
-      let metadata = {}
+      let metadata: Record<string, unknown> = {}
       let cover_image_url: string | null = null
+
       if (form.category === 'Book' && form.title) {
         try {
           const res = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(form.title)}&limit=1`)
@@ -389,6 +366,7 @@ function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalPro
           }
         } catch { /* optional */ }
       }
+
       if ((form.category === 'DVD' || form.category === 'VHS') && form.title) {
         try {
           const res = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(form.title)}&apikey=${process.env.NEXT_PUBLIC_OMDB_API_KEY || 'd5714ece'}`)
@@ -397,6 +375,17 @@ function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalPro
           if (data.Year) metadata = { ...metadata, year: parseInt(data.Year), genre: data.Genre?.split(',')[0] }
         } catch { /* optional */ }
       }
+
+      if (form.category === 'Game' && form.title) {
+        try {
+          const igdb = await fetchIGDBCover(form.title)
+          if (igdb.cover_url) cover_image_url = igdb.cover_url
+          if (igdb.year || igdb.genres.length) {
+            metadata = { ...metadata, year: igdb.year ?? undefined, genre: igdb.genres[0] ?? undefined }
+          }
+        } catch { /* optional */ }
+      }
+
       const res = await fetch('/api/items', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
