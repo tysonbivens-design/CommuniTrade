@@ -1,4 +1,4 @@
-‘use client’
+'use client'
 import { useState, useEffect, useMemo } from ‘react’
 import { createBrowserClient } from ‘@/lib/supabase’
 import ItemCard from ‘./ItemCard’
