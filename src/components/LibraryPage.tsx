@@ -8,6 +8,7 @@ import ReportUserModal from './ReportUserModal'
 import styles from './LibraryPage.module.css'
 import modalStyles from './Modal.module.css'
 import type { Item, AppCtx, ItemCategory, OfferType, Condition } from '@/types'
+import type { ActiveLocation } from './Nav'
 import { useScrollLock } from '@/lib/useScrollLock'
 
 const PAGE_SIZE = 20
@@ -16,13 +17,12 @@ const DB_FETCH_LIMIT = 500
 const ITEM_CATEGORIES: ItemCategory[] = ['Book', 'DVD', 'VHS', 'CD', 'Game', 'Tool', 'Home Good', 'Other']
 const CAT_LABELS: Record<string, string> = {
   '': 'All Items',
-  Book: '📚 Books', DVD: '🎬 DVDs', VHS: '📼 VHS', CD: '🎵 CDs',
-  Game: '🎲 Games', Tool: '🔧 Tools', 'Home Good': '🏠 Home Goods', Other: '📦 Other',
+  Book: 'Books', DVD: 'DVDs', VHS: 'VHS', CD: 'CDs',
+  Game: 'Games', Tool: 'Tools', 'Home Good': 'Home Goods', Other: 'Other',
 }
 const OFFER_LABELS: Record<string, string> = {
-  '': 'Any Type', lend: '🤝 Lend', swap: '🔄 Swap', barter: '⚖️ Barter', free: '🎁 Free',
+  '': 'Any Type', lend: 'Lend', swap: 'Swap', barter: 'Barter', free: 'Free',
 }
-// Categories where genre filtering makes sense
 const GENRE_CATEGORIES = new Set(['Book', 'DVD', 'VHS', 'CD'])
 
 function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -34,7 +34,24 @@ function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): 
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx: AppCtx; initialModal?: 'add' | 'ai' | null; onModalOpened?: () => void }) {
+async function fetchIGDBCover(title: string): Promise<{ cover_url: string | null; year: number | null; genres: string[] }> {
+  const res = await fetch('/api/igdb', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  })
+  if (!res.ok) return { cover_url: null, year: null, genres: [] }
+  return res.json()
+}
+
+interface LibraryPageProps {
+  ctx: AppCtx
+  initialModal?: 'add' | 'ai' | null
+  onModalOpened?: () => void
+  activeLocation: ActiveLocation
+}
+
+export default function LibraryPage({ ctx, initialModal, onModalOpened, activeLocation }: LibraryPageProps) {
   const { user, profile, showToast, requireAuth } = ctx
   const supabase = createBrowserClient()
 
@@ -43,21 +60,18 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Filters
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [category, setCategory] = useState('')
   const [offerType, setOfferType] = useState('')
   const [genre, setGenre] = useState('')
 
-  // Modals
   const [showAdd, setShowAdd] = useState(false)
   const [borrowItem, setBorrowItem] = useState<Item | null>(null)
   const [flagItem, setFlagItem] = useState<Item | null>(null)
   const [reportUser, setReportUser] = useState<{ userId: string; userName: string } | null>(null)
   const [showAI, setShowAI] = useState(false)
 
-  // Open modal immediately if navigated here with one pending
   useEffect(() => {
     if (!initialModal) return
     if (initialModal === 'add') requireAuth(() => setShowAdd(true))
@@ -70,16 +84,14 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
     return () => clearTimeout(timer)
   }, [search])
 
-  // Reset pagination and genre when top-level filters change
   useEffect(() => {
     setVisibleCount(PAGE_SIZE)
     setGenre('')
   }, [category, debouncedSearch, offerType])
 
-  const userId = user?.id ?? null
-  const userLat = profile?.lat ?? null
-  const userLng = profile?.lng ?? null
   const radiusMiles = profile?.radius_miles ?? null
+  const filterLat = activeLocation.lat
+  const filterLng = activeLocation.lng
 
   useEffect(() => {
     let cancelled = false
@@ -98,8 +110,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
 
       if (category) q = q.eq('category', category)
       if (offerType) q = q.eq('offer_type', offerType)
-
-      // Search both title and author_creator
       if (debouncedSearch) {
         q = q.or(`title.ilike.%${debouncedSearch}%,author_creator.ilike.%${debouncedSearch}%`)
       }
@@ -115,12 +125,11 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
 
       let results = (data as Item[]) || []
 
-      // Client-side radius filter
-      if (userId && userLat && userLng && radiusMiles) {
+      // Radius filter using active location (home or GPS)  " own items treated same as others
+      if (filterLat && filterLng && radiusMiles) {
         results = results.filter(item => {
-          if (item.user_id === userId) return true
           if (!item.profiles?.lat || !item.profiles?.lng) return true
-          return distanceMiles(userLat, userLng, item.profiles.lat, item.profiles.lng) <= radiusMiles
+          return distanceMiles(filterLat, filterLng, item.profiles.lat, item.profiles.lng) <= radiusMiles
         })
       }
 
@@ -130,9 +139,8 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
 
     loadItems()
     return () => { cancelled = true }
-  }, [category, offerType, debouncedSearch, userId, userLat, userLng, radiusMiles])
+  }, [category, offerType, debouncedSearch, filterLat, filterLng, radiusMiles])
 
-  // Derive available genres from current result set (only for genre-relevant categories)
   const availableGenres = useMemo(() => {
     if (!category || !GENRE_CATEGORIES.has(category)) return []
     const genres = new Set<string>()
@@ -143,7 +151,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
     return Array.from(genres).sort()
   }, [allItems, category])
 
-  // Client-side genre filter (applied on top of DB results)
   const filteredItems = useMemo(() => {
     if (!genre) return allItems
     return allItems.filter(item => item.metadata?.genre === genre)
@@ -151,10 +158,13 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
 
   const visibleItems = filteredItems.slice(0, visibleCount)
   const hasMore = visibleCount < filteredItems.length
-  const radiusNote = userId && radiusMiles ? `Showing items within ${radiusMiles} miles of you` : null
-
-  // Active filter count for the clear button
   const activeFilterCount = [offerType, genre].filter(Boolean).length
+
+  const radiusNote = filterLat && filterLng && radiusMiles
+    ? activeLocation.mode === 'current'
+      ? `Showing items within ${radiusMiles} miles of your current location`
+      : `Showing items within ${radiusMiles} miles of home`
+    : null
 
   return (
     <div style={{ position: 'relative', zIndex: 1 }}>
@@ -163,13 +173,12 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
           <h1 className="section-title">Community Library</h1>
           <p className="section-subtitle">{radiusNote ?? 'Browse, borrow, and lend with your neighbors'}</p>
 
-          {/* Search + Add */}
           <div className={styles.searchRow}>
             <div className={styles.searchWrap}>
-              <span className={styles.searchIcon}>🔍</span>
+              <span className={styles.searchIcon}> " </span>
               <input
                 className={`input ${styles.searchInput}`}
-                placeholder="Search titles, authors, directors…"
+                placeholder="Search titles, authors, directors..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
@@ -179,12 +188,11 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
                 + Add Item
               </button>
               <button className="btn btn-outline" onClick={() => requireAuth(() => setShowAI(true))} title="Bulk AI Upload">
-                📷 AI Upload
+                AI Upload
               </button>
             </div>
           </div>
 
-          {/* Category tabs */}
           <div className="tabs">
             {Object.entries(CAT_LABELS).map(([val, label]) => (
               <button key={val} className={`tab ${category === val ? 'active' : ''}`} onClick={() => setCategory(val)}>
@@ -193,9 +201,7 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
             ))}
           </div>
 
-          {/* Secondary filters row */}
           <div className={styles.filtersRow}>
-            {/* Offer type pills */}
             <div className={styles.filterGroup}>
               {Object.entries(OFFER_LABELS).map(([val, label]) => (
                 <button
@@ -208,7 +214,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
               ))}
             </div>
 
-            {/* Genre pills — only shown when a genre-relevant category is selected and genres exist */}
             {availableGenres.length > 0 && (
               <div className={styles.filterGroup}>
                 <button
@@ -229,13 +234,9 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
               </div>
             )}
 
-            {/* Clear filters */}
             {activeFilterCount > 0 && (
-              <button
-                className={styles.clearFilters}
-                onClick={() => { setOfferType(''); setGenre('') }}
-              >
-                ✕ Clear filters
+              <button className={styles.clearFilters} onClick={() => { setOfferType(''); setGenre('') }}>
+                Clear filters
               </button>
             )}
           </div>
@@ -252,13 +253,13 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
             </div>
           ) : filteredItems.length === 0 ? (
             <div className={styles.empty}>
-              <div className={styles.emptyIcon}>📚</div>
+              <div className={styles.emptyIcon}> " </div>
               <h3>Nothing matches</h3>
               <p>
                 {activeFilterCount > 0
                   ? 'Try clearing some filters to see more results.'
-                  : userId && radiusMiles
-                    ? `No items within ${radiusMiles} miles. Try increasing your radius by clicking the 📍 pill in the nav.`
+                  : filterLat && radiusMiles
+                    ? `No items within ${radiusMiles} miles. Try increasing your radius in the nav.`
                     : 'Be the first to add something to your community!'}
               </p>
               {activeFilterCount > 0 ? (
@@ -284,7 +285,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
                   />
                 ))}
               </div>
-
               {hasMore && (
                 <div style={{ textAlign: 'center', marginTop: '2.5rem' }}>
                   <button
@@ -298,8 +298,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
               )}
             </>
           )}
-
-
         </div>
       </div>
 
@@ -307,7 +305,7 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
         <AddItemModal
           userId={user!.id}
           onClose={() => setShowAdd(false)}
-          onSuccess={() => { setShowAdd(false); showToast('Item added! 🎉') }}
+          onSuccess={() => { setShowAdd(false); showToast('Item added!') }}
           showToast={showToast}
         />
       )}
@@ -316,7 +314,7 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
           item={borrowItem}
           userId={user!.id}
           onClose={() => setBorrowItem(null)}
-          onSuccess={() => { setBorrowItem(null); showToast('Borrow request sent! 📬') }}
+          onSuccess={() => { setBorrowItem(null); showToast('Borrow request sent!') }}
           showToast={showToast}
         />
       )}
@@ -333,7 +331,7 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
         <AIUploadModal
           userId={user!.id}
           onClose={() => setShowAI(false)}
-          onSuccess={count => { setShowAI(false); showToast(`${count} item${count !== 1 ? 's' : ''} added to your inventory! 🎉`) }}
+          onSuccess={count => { setShowAI(false); showToast(`${count} item${count !== 1 ? 's' : ''} added to your inventory!`) }}
           showToast={showToast}
         />
       )}
@@ -351,7 +349,7 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
   )
 }
 
-// ─── Add Item Modal ────────────────────────────────────────────────────────────
+// --- Add Item Modal ----------------------------------------------------------
 
 interface AddItemModalProps {
   userId: string
@@ -376,8 +374,9 @@ function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalPro
     e.preventDefault()
     setLoading(true)
     try {
-      let metadata = {}
+      let metadata: Record<string, unknown> = {}
       let cover_image_url: string | null = null
+
       if (form.category === 'Book' && form.title) {
         try {
           const res = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(form.title)}&limit=1`)
@@ -389,6 +388,7 @@ function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalPro
           }
         } catch { /* optional */ }
       }
+
       if ((form.category === 'DVD' || form.category === 'VHS') && form.title) {
         try {
           const res = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(form.title)}&apikey=${process.env.NEXT_PUBLIC_OMDB_API_KEY || 'd5714ece'}`)
@@ -397,6 +397,17 @@ function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalPro
           if (data.Year) metadata = { ...metadata, year: parseInt(data.Year), genre: data.Genre?.split(',')[0] }
         } catch { /* optional */ }
       }
+
+      if (form.category === 'Game' && form.title) {
+        try {
+          const igdb = await fetchIGDBCover(form.title)
+          if (igdb.cover_url) cover_image_url = igdb.cover_url
+          if (igdb.year || igdb.genres.length) {
+            metadata = { ...metadata, year: igdb.year ?? undefined, genre: igdb.genres[0] ?? undefined }
+          }
+        } catch { /* optional */ }
+      }
+
       const res = await fetch('/api/items', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -427,17 +438,17 @@ function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalPro
   return (
     <div className={modalStyles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
       <div className={modalStyles.modal}>
-        <button className={modalStyles.close} onClick={onClose}>✕</button>
+        <button className={modalStyles.close} onClick={onClose}>X</button>
         <h2 className={modalStyles.title}>Add an Item</h2>
         <p className={modalStyles.subtitle}>Share something from your home with your community</p>
         <form onSubmit={submit}>
           <div className="form-group">
             <label className="label">Title *</label>
-            <input className="input" value={form.title} onChange={set('title')} placeholder="e.g. The Godfather, Beloved by Toni Morrison…" required />
+            <input className="input" value={form.title} onChange={set('title')} placeholder="e.g. The Godfather, Beloved..." required />
           </div>
           <div className="form-group">
             <label className="label">Author / Creator</label>
-            <input className="input" value={form.author_creator} onChange={set('author_creator')} placeholder="e.g. Toni Morrison, Stanley Kubrick…" />
+            <input className="input" value={form.author_creator} onChange={set('author_creator')} placeholder="e.g. Toni Morrison, Stanley Kubrick..." />
           </div>
           <div className={modalStyles.formRow}>
             <div className="form-group">
@@ -472,7 +483,7 @@ function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalPro
           </div>
           <div className="form-group">
             <label className="label">Notes</label>
-            <textarea className="input" rows={2} value={form.notes} onChange={set('notes')} placeholder="Any details worth knowing…" />
+            <textarea className="input" rows={2} value={form.notes} onChange={set('notes')} placeholder="Any details worth knowing..." />
           </div>
           <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
             {loading ? <span className="spinner" /> : 'Add to Community Shelf'}
@@ -483,7 +494,7 @@ function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalPro
   )
 }
 
-// ─── Flag Modal ────────────────────────────────────────────────────────────────
+// --- Flag Modal --------------------------------------------------------------
 
 interface FlagModalProps {
   item: Item
@@ -519,9 +530,9 @@ function FlagModal({ item, userId, onClose, onSuccess, showToast }: FlagModalPro
   return (
     <div className={modalStyles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
       <div className={modalStyles.modal}>
-        <button className={modalStyles.close} onClick={onClose}>✕</button>
+        <button className={modalStyles.close} onClick={onClose}>X</button>
         <h2 className={modalStyles.title}>Flag This Listing</h2>
-        <p className={modalStyles.subtitle}>Help keep the community accurate. "{item.title}"</p>
+        <p className={modalStyles.subtitle}>Help keep the community accurate.</p>
         <form onSubmit={submit}>
           <div className="form-group">
             <label className="label">Reason</label>
@@ -534,7 +545,7 @@ function FlagModal({ item, userId, onClose, onSuccess, showToast }: FlagModalPro
           </div>
           <div className="form-group">
             <label className="label">Notes</label>
-            <textarea className="input" rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any details…" />
+            <textarea className="input" rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any details..." />
           </div>
           <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
             {loading ? <span className="spinner" /> : 'Submit Flag'}
