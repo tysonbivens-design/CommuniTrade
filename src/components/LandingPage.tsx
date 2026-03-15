@@ -1,557 +1,224 @@
 'use client'
-import { useState, useEffect, useMemo } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
-import ItemCard from './ItemCard'
-import BorrowModal from './BorrowModal'
-import AIUploadModal from './AIUploadModal'
-import ReportUserModal from './ReportUserModal'
-import styles from './LibraryPage.module.css'
-import modalStyles from './Modal.module.css'
-import type { Item, AppCtx, ItemCategory, OfferType, Condition } from '@/types'
-import type { ActiveLocation } from './Nav'
-import { useScrollLock } from '@/lib/useScrollLock'
+import styles from './LandingPage.module.css'
+import type { AppCtx } from '@/types'
 
-const PAGE_SIZE = 20
-const DB_FETCH_LIMIT = 500
+const FEATURES = [
+  { icon: '📚', title: 'Lend & Borrow', body: 'Share books, DVDs, tools, games — anything on your shelf gathering dust.' },
+  { icon: '⚖️', title: 'Barter Skills', body: 'Trade what you have for what you need. Guitar lessons for fresh eggs. AI matches you automatically.' },
+  { icon: '⭐', title: 'Trust Scores', body: 'Every exchange builds your reputation. The community self-polices — good neighbors rise to the top.' },
+  { icon: '📍', title: 'Hyper-Local', body: 'Set your radius. See only what\'s near you. Your neighborhood, not the whole internet.' },
+]
 
-const ITEM_CATEGORIES: ItemCategory[] = ['Book', 'DVD', 'VHS', 'CD', 'Game', 'Tool', 'Home Good', 'Other']
-const CAT_LABELS: Record<string, string> = {
-  '': 'All Items',
-  Book: 'Books', DVD: 'DVDs', VHS: 'VHS', CD: 'CDs',
-  Game: 'Games', Tool: 'Tools', 'Home Good': 'Home Goods', Other: 'Other',
-}
-const OFFER_LABELS: Record<string, string> = {
-  '': 'Any Type', lend: 'Lend', swap: 'Swap', barter: 'Barter', free: 'Free',
-}
-const GENRE_CATEGORIES = new Set(['Book', 'DVD', 'VHS', 'CD'])
+const ITEMS = [
+  { emoji: '📚', label: 'The Midnight Library', sub: 'Matt Haig · Novel' },
+  { emoji: '🔧', label: 'DeWalt Drill Set', sub: 'Tool · Excellent condition' },
+  { emoji: '🎬', label: 'Spirited Away', sub: 'DVD · Studio Ghibli' },
+  { emoji: '🎲', label: 'Settlers of Catan', sub: 'Board Game · Complete set' },
+  { emoji: '🎵', label: 'Kind of Blue', sub: 'CD · Miles Davis' },
+  { emoji: '🏠', label: 'Stand Mixer', sub: 'Home Good · KitchenAid' },
+]
 
-function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 3958.8
-  const dLat = (lat2 - lat1) * Math.PI / 180
-  const dLng = (lng2 - lng1) * Math.PI / 180
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-}
-
-async function fetchIGDBCover(title: string): Promise<{ cover_url: string | null; year: number | null; genres: string[] }> {
-  const res = await fetch('/api/igdb', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title }),
-  })
-  if (!res.ok) return { cover_url: null, year: null, genres: [] }
-  return res.json()
-}
-
-interface LibraryPageProps {
+interface LandingPageProps {
   ctx: AppCtx
-  initialModal?: 'add' | 'ai' | null
-  onModalOpened?: () => void
-  activeLocation: ActiveLocation
+  onSignUp: () => void
+  onSignIn: () => void
 }
 
-export default function LibraryPage({ ctx, initialModal, onModalOpened, activeLocation }: LibraryPageProps) {
-  const { user, profile, showToast, requireAuth } = ctx
+export default function LandingPage({ ctx, onSignUp, onSignIn }: LandingPageProps) {
+  const { navigate } = ctx
   const supabase = createBrowserClient()
-
-  const [allItems, setAllItems] = useState<Item[]>([])
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [category, setCategory] = useState('')
-  const [offerType, setOfferType] = useState('')
-  const [genre, setGenre] = useState('')
-
-  const [showAdd, setShowAdd] = useState(false)
-  const [borrowItem, setBorrowItem] = useState<Item | null>(null)
-  const [flagItem, setFlagItem] = useState<Item | null>(null)
-  const [reportUser, setReportUser] = useState<{ userId: string; userName: string } | null>(null)
-  const [showAI, setShowAI] = useState(false)
+  const heroRef = useRef<HTMLDivElement>(null)
+  const [scrollY, setScrollY] = useState(0)
+  const [stats, setStats] = useState({ items: 0, members: 0, trades: 0 })
 
   useEffect(() => {
-    if (!initialModal) return
-    if (initialModal === 'add') requireAuth(() => setShowAdd(true))
-    if (initialModal === 'ai') requireAuth(() => setShowAI(true))
-    onModalOpened?.()
-  }, [initialModal])
-
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 300)
-    return () => clearTimeout(timer)
-  }, [search])
-
-  useEffect(() => {
-    setVisibleCount(PAGE_SIZE)
-    setGenre('')
-  }, [category, debouncedSearch, offerType])
-
-  const radiusMiles = profile?.radius_miles ?? null
-  const filterLat = activeLocation.lat
-  const filterLng = activeLocation.lng
+    const handler = () => setScrollY(window.scrollY)
+    window.addEventListener('scroll', handler, { passive: true })
+    return () => window.removeEventListener('scroll', handler)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
-
-    async function loadItems() {
-      setLoading(true)
-      setError(null)
-
-      let q = supabase
-        .from('items')
-        .select('*, profiles(full_name, trust_score, avatar_color, avatar_url, lat, lng)')
-        .eq('flagged', false)
-        .eq('archived', false)
-        .order('created_at', { ascending: false })
-        .limit(DB_FETCH_LIMIT)
-
-      if (category) q = q.eq('category', category)
-      if (offerType) q = q.eq('offer_type', offerType)
-      if (debouncedSearch) {
-        q = q.or(`title.ilike.%${debouncedSearch}%,author_creator.ilike.%${debouncedSearch}%`)
-      }
-
-      const { data, error: fetchError } = await q
+    async function loadStats() {
+      const [itemCount, memberCount, loanCount] = await Promise.all([
+        supabase.from('items').select('*', { count: 'exact', head: true }).eq('archived', false),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }),
+        supabase.from('loans').select('*', { count: 'exact', head: true }),
+      ])
       if (cancelled) return
-
-      if (fetchError) {
-        setError('Could not load items. Please try refreshing.')
-        setLoading(false)
-        return
-      }
-
-      let results = (data as Item[]) || []
-
-      // Radius filter using active location (home or GPS)  " own items treated same as others
-      if (filterLat && filterLng && radiusMiles) {
-        results = results.filter(item => {
-          if (!item.profiles?.lat || !item.profiles?.lng) return true
-          return distanceMiles(filterLat, filterLng, item.profiles.lat, item.profiles.lng) <= radiusMiles
-        })
-      }
-
-      setAllItems(results)
-      setLoading(false)
+      setStats({
+        items: itemCount.count || 0,
+        members: memberCount.count || 0,
+        trades: loanCount.count || 0,
+      })
     }
-
-    loadItems()
+    loadStats()
     return () => { cancelled = true }
-  }, [category, offerType, debouncedSearch, filterLat, filterLng, radiusMiles])
-
-  const availableGenres = useMemo(() => {
-    if (!category || !GENRE_CATEGORIES.has(category)) return []
-    const genres = new Set<string>()
-    allItems.forEach(item => {
-      const g = item.metadata?.genre
-      if (g) genres.add(g)
-    })
-    return Array.from(genres).sort()
-  }, [allItems, category])
-
-  const filteredItems = useMemo(() => {
-    if (!genre) return allItems
-    return allItems.filter(item => item.metadata?.genre === genre)
-  }, [allItems, genre])
-
-  const visibleItems = filteredItems.slice(0, visibleCount)
-  const hasMore = visibleCount < filteredItems.length
-  const activeFilterCount = [offerType, genre].filter(Boolean).length
-
-  const radiusNote = filterLat && filterLng && radiusMiles
-    ? activeLocation.mode === 'current'
-      ? `Showing items within ${radiusMiles} miles of your current location`
-      : `Showing items within ${radiusMiles} miles of home`
-    : null
+  }, [])
 
   return (
-    <div style={{ position: 'relative', zIndex: 1 }}>
-      <div className="container">
-        <div className="section">
-          <h1 className="section-title">Community Library</h1>
-          <p className="section-subtitle">{radiusNote ?? 'Browse, borrow, and lend with your neighbors'}</p>
+    <div className={styles.root}>
 
-          <div className={styles.searchRow}>
-            <div className={styles.searchWrap}>
-              <span className={styles.searchIcon}> " </span>
-              <input
-                className={`input ${styles.searchInput}`}
-                placeholder="Search titles, authors, directors..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-              />
-            </div>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>
-                + Add Item
-              </button>
-              <button className="btn btn-outline" onClick={() => requireAuth(() => setShowAI(true))} title="Bulk AI Upload">
-                AI Upload
-              </button>
-            </div>
+      {/* ── HERO ─────────────────────────────────────────────────── */}
+      <section className={styles.hero} ref={heroRef}>
+        <div
+          className={styles.heroParallax}
+          style={{ transform: `translateY(${scrollY * 0.3}px)` }}
+        />
+        <div className={styles.heroGrain} />
+
+        <div className={styles.heroInner}>
+          <div className={styles.heroPill}>🌱 Free to join · No corporations · Just neighbors</div>
+          <h1 className={styles.heroTitle}>
+            Your neighborhood's<br />
+            <em>shared shelf.</em>
+          </h1>
+          <p className={styles.heroSub}>
+            Borrow books. Swap DVDs. Trade skills. Build community. With real people who live near you —
+            not strangers on the internet.
+          </p>
+          <div className={styles.heroCtas}>
+            <button className={styles.ctaPrimary} onClick={onSignUp}>
+              Join Free — It Takes 30 Seconds
+            </button>
+            <button className={styles.ctaGhost} onClick={() => navigate('library')}>
+              Browse the Library →
+            </button>
           </div>
 
-          <div className="tabs">
-            {Object.entries(CAT_LABELS).map(([val, label]) => (
-              <button key={val} className={`tab ${category === val ? 'active' : ''}`} onClick={() => setCategory(val)}>
-                {label}
-              </button>
+          {/* Floating item cards */}
+          <div className={styles.floatingCards}>
+            {ITEMS.map((item, i) => (
+              <div
+                key={i}
+                className={styles.floatingCard}
+                style={{
+                  animationDelay: `${i * 0.15}s`,
+                  '--float-offset': `${(i % 3) * 8 - 8}px`,
+                } as React.CSSProperties}
+              >
+                <span className={styles.floatingEmoji}>{item.emoji}</span>
+                <div>
+                  <div className={styles.floatingLabel}>{item.label}</div>
+                  <div className={styles.floatingSub}>{item.sub}</div>
+                </div>
+                <span className={styles.floatingBadge}>Available</span>
+              </div>
             ))}
           </div>
-
-          <div className={styles.filtersRow}>
-            <div className={styles.filterGroup}>
-              {Object.entries(OFFER_LABELS).map(([val, label]) => (
-                <button
-                  key={val}
-                  className={`${styles.filterPill} ${offerType === val ? styles.filterPillActive : ''}`}
-                  onClick={() => setOfferType(val)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {availableGenres.length > 0 && (
-              <div className={styles.filterGroup}>
-                <button
-                  className={`${styles.filterPill} ${genre === '' ? styles.filterPillActive : ''}`}
-                  onClick={() => setGenre('')}
-                >
-                  All Genres
-                </button>
-                {availableGenres.map(g => (
-                  <button
-                    key={g}
-                    className={`${styles.filterPill} ${genre === g ? styles.filterPillActive : ''}`}
-                    onClick={() => { setGenre(g); setVisibleCount(PAGE_SIZE) }}
-                  >
-                    {g}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {activeFilterCount > 0 && (
-              <button className={styles.clearFilters} onClick={() => { setOfferType(''); setGenre('') }}>
-                Clear filters
-              </button>
-            )}
-          </div>
-
-          {loading ? (
-            <div className={styles.loadingGrid}>
-              {[...Array(8)].map((_, i) => <div key={i} className={styles.skeleton} />)}
-            </div>
-          ) : error ? (
-            <div className={styles.empty}>
-              <div className={styles.emptyIcon}>⚠️</div>
-              <h3>Something went wrong</h3>
-              <p>{error}</p>
-            </div>
-          ) : filteredItems.length === 0 ? (
-            <div className={styles.empty}>
-              <div className={styles.emptyIcon}> " </div>
-              <h3>Nothing matches</h3>
-              <p>
-                {activeFilterCount > 0
-                  ? 'Try clearing some filters to see more results.'
-                  : filterLat && radiusMiles
-                    ? `No items within ${radiusMiles} miles. Try increasing your radius in the nav.`
-                    : 'Be the first to add something to your community!'}
-              </p>
-              {activeFilterCount > 0 ? (
-                <button className="btn btn-outline" onClick={() => { setOfferType(''); setGenre('') }}>
-                  Clear Filters
-                </button>
-              ) : (
-                <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>
-                  Add the first item
-                </button>
-              )}
-            </div>
-          ) : (
-            <>
-              <div className="grid-4">
-                {visibleItems.map(item => (
-                  <ItemCard
-                    key={item.id}
-                    item={item}
-                    onBorrow={(i: Item) => requireAuth(() => setBorrowItem(i))}
-                    onFlag={(i: Item) => requireAuth(() => setFlagItem(i))}
-                    onReportUser={(uid, name) => requireAuth(() => setReportUser({ userId: uid, userName: name }))}
-                  />
-                ))}
-              </div>
-              {hasMore && (
-                <div style={{ textAlign: 'center', marginTop: '2.5rem' }}>
-                  <button
-                    className="btn btn-outline btn-lg"
-                    onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
-                    style={{ minWidth: 200, padding: '0.9rem 2rem' }}
-                  >
-                    Load More · {filteredItems.length - visibleCount} remaining
-                  </button>
-                </div>
-              )}
-            </>
-          )}
         </div>
-      </div>
 
-      {showAdd && (
-        <AddItemModal
-          userId={user!.id}
-          onClose={() => setShowAdd(false)}
-          onSuccess={() => { setShowAdd(false); showToast('Item added!') }}
-          showToast={showToast}
-        />
-      )}
-      {borrowItem && (
-        <BorrowModal
-          item={borrowItem}
-          userId={user!.id}
-          onClose={() => setBorrowItem(null)}
-          onSuccess={() => { setBorrowItem(null); showToast('Borrow request sent!') }}
-          showToast={showToast}
-        />
-      )}
-      {flagItem && (
-        <FlagModal
-          item={flagItem}
-          userId={user!.id}
-          onClose={() => setFlagItem(null)}
-          onSuccess={() => { setFlagItem(null); showToast("Thanks for the report. We'll review it.") }}
-          showToast={showToast}
-        />
-      )}
-      {showAI && (
-        <AIUploadModal
-          userId={user!.id}
-          onClose={() => setShowAI(false)}
-          onSuccess={count => { setShowAI(false); showToast(`${count} item${count !== 1 ? 's' : ''} added to your inventory!`) }}
-          showToast={showToast}
-        />
-      )}
-      {reportUser && user && (
-        <ReportUserModal
-          reportedUserId={reportUser.userId}
-          reportedName={reportUser.userName}
-          reporterId={user.id}
-          onClose={() => setReportUser(null)}
-          onSuccess={() => { setReportUser(null); showToast("Report submitted. Thank you for keeping the community safe.") }}
-          showToast={showToast}
-        />
-      )}
-    </div>
-  )
-}
+        <div className={styles.heroWave}>
+          <svg viewBox="0 0 1440 80" preserveAspectRatio="none">
+            <path d="M0,40 C360,80 1080,0 1440,40 L1440,80 L0,80 Z" fill="var(--cream)" />
+          </svg>
+        </div>
+      </section>
 
-// --- Add Item Modal ----------------------------------------------------------
+      {/* ── SOCIAL PROOF STRIP ───────────────────────────────────── */}
+      <section className={styles.strip}>
+        <div className={styles.stripInner}>
+          <div className={styles.stripStat}><span className={styles.stripNum}>{stats.items}</span><span className={styles.stripLabel}>Items Available</span></div>
+          <div className={styles.stripDivider} />
+          <div className={styles.stripStat}><span className={styles.stripNum}>{stats.members}</span><span className={styles.stripLabel}>Neighbors Joined</span></div>
+          <div className={styles.stripDivider} />
+          <div className={styles.stripStat}><span className={styles.stripNum}>{stats.trades}</span><span className={styles.stripLabel}>Trades Completed</span></div>
+        </div>
+      </section>
 
-interface AddItemModalProps {
-  userId: string
-  onClose: () => void
-  onSuccess: () => void
-  showToast: AppCtx['showToast']
-}
-
-function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalProps) {
-  useScrollLock()
-  const supabase = createBrowserClient()
-  const [loading, setLoading] = useState(false)
-  const [form, setForm] = useState({
-    title: '', author_creator: '', category: 'Book' as ItemCategory,
-    offer_type: 'lend' as OfferType, condition: 'good' as Condition,
-    notes: '', duration_days: 14,
-  })
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
-    setForm(f => ({ ...f, [k]: e.target.value }))
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault()
-    setLoading(true)
-    try {
-      let metadata: Record<string, unknown> = {}
-      let cover_image_url: string | null = null
-
-      if (form.category === 'Book' && form.title) {
-        try {
-          const res = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(form.title)}&limit=1`)
-          const data = await res.json()
-          if (data.docs?.[0]) {
-            const doc = data.docs[0]
-            metadata = { year: doc.first_publish_year, genre: doc.subject?.[0], publisher: doc.publisher?.[0] }
-            if (doc.cover_i) cover_image_url = `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
-          }
-        } catch { /* optional */ }
-      }
-
-      if ((form.category === 'DVD' || form.category === 'VHS') && form.title) {
-        try {
-          const res = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(form.title)}&apikey=${process.env.NEXT_PUBLIC_OMDB_API_KEY || 'd5714ece'}`)
-          const data = await res.json()
-          if (data.Poster && data.Poster !== 'N/A') cover_image_url = data.Poster
-          if (data.Year) metadata = { ...metadata, year: parseInt(data.Year), genre: data.Genre?.split(',')[0] }
-        } catch { /* optional */ }
-      }
-
-      if (form.category === 'Game' && form.title) {
-        try {
-          const igdb = await fetchIGDBCover(form.title)
-          if (igdb.cover_url) cover_image_url = igdb.cover_url
-          if (igdb.year || igdb.genres.length) {
-            metadata = { ...metadata, year: igdb.year ?? undefined, genre: igdb.genres[0] ?? undefined }
-          }
-        } catch { /* optional */ }
-      }
-
-      const res = await fetch('/api/items', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId,
-          items: [{
-            title: form.title,
-            author_creator: form.author_creator || null,
-            category: form.category,
-            offer_type: form.offer_type,
-            condition: form.condition,
-            notes: form.notes || null,
-            metadata,
-            cover_image_url,
-          }],
-        }),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Could not add item')
-      onSuccess()
-    } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : 'Could not add item', 'error')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div className={modalStyles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className={modalStyles.modal}>
-        <button className={modalStyles.close} onClick={onClose}>X</button>
-        <h2 className={modalStyles.title}>Add an Item</h2>
-        <p className={modalStyles.subtitle}>Share something from your home with your community</p>
-        <form onSubmit={submit}>
-          <div className="form-group">
-            <label className="label">Title *</label>
-            <input className="input" value={form.title} onChange={set('title')} placeholder="e.g. The Godfather, Beloved..." required />
-          </div>
-          <div className="form-group">
-            <label className="label">Author / Creator</label>
-            <input className="input" value={form.author_creator} onChange={set('author_creator')} placeholder="e.g. Toni Morrison, Stanley Kubrick..." />
-          </div>
-          <div className={modalStyles.formRow}>
-            <div className="form-group">
-              <label className="label">Category *</label>
-              <select className="input" value={form.category} onChange={set('category')}>
-                {ITEM_CATEGORIES.map(c => <option key={c}>{c}</option>)}
-              </select>
+      {/* ── HOW IT WORKS ─────────────────────────────────────────── */}
+      <section className={styles.section}>
+        <div className="container">
+          <div className={styles.sectionLabel}>How it works</div>
+          <h2 className={styles.sectionTitle}>Three steps to a more connected neighborhood</h2>
+          <div className={styles.steps}>
+            <div className={styles.step}>
+              <div className={styles.stepNum}>01</div>
+              <div className={styles.stepIcon}>📷</div>
+              <h3 className={styles.stepTitle}>Snap your shelf</h3>
+              <p className={styles.stepBody}>Upload a photo and our AI catalogs everything automatically. Or add items manually — it takes under a minute.</p>
             </div>
-            <div className="form-group">
-              <label className="label">Offer Type *</label>
-              <select className="input" value={form.offer_type} onChange={set('offer_type')}>
-                <option value="lend">Lend / Borrow</option>
-                <option value="swap">Permanent Swap</option>
-                <option value="barter">Barter</option>
-                <option value="free">Free / Give Away</option>
-              </select>
+            <div className={styles.stepArrow}>→</div>
+            <div className={styles.step}>
+              <div className={styles.stepNum}>02</div>
+              <div className={styles.stepIcon}>🔍</div>
+              <h3 className={styles.stepTitle}>Browse nearby</h3>
+              <p className={styles.stepBody}>Set your radius. See what your neighbors are sharing. Filter by category, offer type, or search by title.</p>
+            </div>
+            <div className={styles.stepArrow}>→</div>
+            <div className={styles.step}>
+              <div className={styles.stepNum}>03</div>
+              <div className={styles.stepIcon}>🤝</div>
+              <h3 className={styles.stepTitle}>Trade & connect</h3>
+              <p className={styles.stepBody}>Request a borrow, post a barter, or message directly. Every exchange builds your community trust score.</p>
             </div>
           </div>
-          <div className={modalStyles.formRow}>
-            <div className="form-group">
-              <label className="label">Condition</label>
-              <select className="input" value={form.condition} onChange={set('condition')}>
-                <option value="excellent">Excellent</option>
-                <option value="good">Good</option>
-                <option value="fair">Fair</option>
-              </select>
+        </div>
+      </section>
+
+      {/* ── FEATURES ─────────────────────────────────────────────── */}
+      <section className={`${styles.section} ${styles.sectionAlt}`}>
+        <div className="container">
+          <div className={styles.sectionLabel}>Features</div>
+          <h2 className={styles.sectionTitle}>Everything your neighborhood needs</h2>
+          <div className={styles.features}>
+            {FEATURES.map((f, i) => (
+              <div key={i} className={styles.featureCard}>
+                <div className={styles.featureIcon}>{f.icon}</div>
+                <h3 className={styles.featureTitle}>{f.title}</h3>
+                <p className={styles.featureBody}>{f.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── AI CALLOUT ───────────────────────────────────────────── */}
+      <section className={styles.aiCallout}>
+        <div className="container">
+          <div className={styles.aiInner}>
+            <div className={styles.aiText}>
+              <div className={styles.sectionLabel} style={{ color: 'var(--gold)' }}>Powered by Claude AI</div>
+              <h2 className={styles.aiTitle}>Catalog your entire shelf in seconds</h2>
+              <p className={styles.aiBody}>
+                Snap a photo of your bookshelf or DVD rack. Claude reads every title, identifies the category, and adds them all to your inventory — ready to share with your neighbors.
+              </p>
+              <button className={styles.ctaPrimary} onClick={onSignUp}>Try It Free →</button>
             </div>
-            <div className="form-group">
-              <label className="label">Max Loan (days)</label>
-              <input className="input" type="number" value={form.duration_days} onChange={set('duration_days')} min={1} max={90} />
+            <div className={styles.aiDemo}>
+              <div className={styles.aiDemoCard}>
+                <div className={styles.aiDemoHeader}>
+                  <span>📷</span>
+                  <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)' }}>Claude is scanning your shelf…</span>
+                </div>
+                {['The Godfather · DVD', 'Beloved · Toni Morrison', 'Kind of Blue · Miles Davis', 'Settlers of Catan · Game'].map((item, i) => (
+                  <div key={i} className={styles.aiDemoItem} style={{ animationDelay: `${i * 0.4 + 0.5}s` }}>
+                    <span className={styles.aiDemoCheck}>✓</span>
+                    <span>{item}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-          <div className="form-group">
-            <label className="label">Notes</label>
-            <textarea className="input" rows={2} value={form.notes} onChange={set('notes')} placeholder="Any details worth knowing..." />
-          </div>
-          <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
-            {loading ? <span className="spinner" /> : 'Add to Community Shelf'}
+        </div>
+      </section>
+
+      {/* ── FINAL CTA ────────────────────────────────────────────── */}
+      <section className={styles.finalCta}>
+        <div className={styles.finalCtaInner}>
+          <h2 className={styles.finalCtaTitle}>Your neighbors are already sharing.</h2>
+          <p className={styles.finalCtaSub}>Join free. No credit card. No catch.</p>
+          <button className={styles.ctaPrimary} style={{ fontSize: '1.1rem', padding: '1rem 2.5rem' }} onClick={onSignUp}>
+            Join Your Neighborhood →
           </button>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-// --- Flag Modal --------------------------------------------------------------
-
-interface FlagModalProps {
-  item: Item
-  userId: string
-  onClose: () => void
-  onSuccess: () => void
-  showToast: AppCtx['showToast']
-}
-
-function FlagModal({ item, userId, onClose, onSuccess, showToast }: FlagModalProps) {
-  useScrollLock()
-  const supabase = createBrowserClient()
-  const [loading, setLoading] = useState(false)
-  const [reason, setReason] = useState('unavailable')
-  const [notes, setNotes] = useState('')
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault()
-    setLoading(true)
-    try {
-      const { error } = await supabase.from('item_flags').insert({
-        item_id: item.id, user_id: userId, reason, notes,
-      })
-      if (error) throw error
-      onSuccess()
-    } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : 'Could not submit flag', 'error')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div className={modalStyles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className={modalStyles.modal}>
-        <button className={modalStyles.close} onClick={onClose}>X</button>
-        <h2 className={modalStyles.title}>Flag This Listing</h2>
-        <p className={modalStyles.subtitle}>Help keep the community accurate.</p>
-        <form onSubmit={submit}>
-          <div className="form-group">
-            <label className="label">Reason</label>
-            <select className="input" value={reason} onChange={e => setReason(e.target.value)}>
-              <option value="unavailable">No longer available</option>
-              <option value="incorrect_info">Incorrect information</option>
-              <option value="damaged">Item is damaged</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-          <div className="form-group">
-            <label className="label">Notes</label>
-            <textarea className="input" rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any details..." />
-          </div>
-          <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
-            {loading ? <span className="spinner" /> : 'Submit Flag'}
+          <button className={styles.ctaGhost} onClick={onSignIn} style={{ marginTop: '0.75rem' }}>
+            Already a member? Sign in
           </button>
-        </form>
-      </div>
+        </div>
+      </section>
+
     </div>
   )
 }
