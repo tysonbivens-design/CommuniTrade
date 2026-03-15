@@ -34,7 +34,6 @@ Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng 
 return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-// ─── Shared IGDB helper ───────────────────────────────────────────────────────
 async function fetchIGDBCover(title: string): Promise<{ cover_url: string | null; year: number | null; genres: string[] }> {
 const res = await fetch(’/api/igdb’, {
 method: ‘POST’,
@@ -56,22 +55,22 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened, activeLo
 const { user, profile, showToast, requireAuth } = ctx
 const supabase = createBrowserClient()
 
-const [allItems, setAllItems] = useState<Item[]>([])
+const [allItems, setAllItems]     = useState<Item[]>([])
 const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
-const [loading, setLoading] = useState(true)
-const [error, setError] = useState<string | null>(null)
+const [loading, setLoading]       = useState(true)
+const [error, setError]           = useState<string | null>(null)
 
-const [search, setSearch] = useState(’’)
+const [search, setSearch]               = useState(’’)
 const [debouncedSearch, setDebouncedSearch] = useState(’’)
-const [category, setCategory] = useState(’’)
-const [offerType, setOfferType] = useState(’’)
-const [genre, setGenre] = useState(’’)
+const [category, setCategory]           = useState(’’)
+const [offerType, setOfferType]         = useState(’’)
+const [genre, setGenre]                 = useState(’’)
 
-const [showAdd, setShowAdd] = useState(false)
+const [showAdd, setShowAdd]       = useState(false)
 const [borrowItem, setBorrowItem] = useState<Item | null>(null)
-const [flagItem, setFlagItem] = useState<Item | null>(null)
+const [flagItem, setFlagItem]     = useState<Item | null>(null)
 const [reportUser, setReportUser] = useState<{ userId: string; userName: string } | null>(null)
-const [showAI, setShowAI] = useState(false)
+const [showAI, setShowAI]         = useState(false)
 
 useEffect(() => {
 if (!initialModal) return
@@ -90,12 +89,9 @@ setVisibleCount(PAGE_SIZE)
 setGenre(’’)
 }, [category, debouncedSearch, offerType])
 
-const userId = user?.id ?? null
 const radiusMiles = profile?.radius_miles ?? null
-
-// Use activeLocation coords (either home zip or GPS) for radius filtering
-const filterLat = activeLocation.lat
-const filterLng = activeLocation.lng
+const filterLat   = activeLocation.lat
+const filterLng   = activeLocation.lng
 
 useEffect(() => {
 let cancelled = false
@@ -130,7 +126,7 @@ async function loadItems() {
 
   let results = (data as Item[]) || []
 
-  // Radius filter — uses activeLocation (home or GPS), treats own items same as others
+  // Radius filter using active location (home zip or GPS) — own items treated same as others
   if (filterLat && filterLng && radiusMiles) {
     results = results.filter(item => {
       if (!item.profiles?.lat || !item.profiles?.lng) return true
@@ -163,8 +159,8 @@ if (!genre) return allItems
 return allItems.filter(item => item.metadata?.genre === genre)
 }, [allItems, genre])
 
-const visibleItems = filteredItems.slice(0, visibleCount)
-const hasMore = visibleCount < filteredItems.length
+const visibleItems   = filteredItems.slice(0, visibleCount)
+const hasMore        = visibleCount < filteredItems.length
 const activeFilterCount = [offerType, genre].filter(Boolean).length
 
 const radiusNote = filterLat && filterLng && radiusMiles
@@ -186,7 +182,7 @@ return (
           <span className={styles.searchIcon}>🔍</span>
           <input
             className={`input ${styles.searchInput}`}
-            placeholder="Search titles, authors, directors…"
+            placeholder="Search titles, authors, directors..."
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
@@ -243,10 +239,7 @@ return (
         )}
 
         {activeFilterCount > 0 && (
-          <button
-            className={styles.clearFilters}
-            onClick={() => { setOfferType(''); setGenre('') }}
-          >
+          <button className={styles.clearFilters} onClick={() => { setOfferType(''); setGenre('') }}>
             ✕ Clear filters
           </button>
         )}
@@ -270,7 +263,7 @@ return (
             {activeFilterCount > 0
               ? 'Try clearing some filters to see more results.'
               : filterLat && radiusMiles
-                ? `No items within ${radiusMiles} miles. Try increasing your radius by clicking the location pill in the nav.`
+                ? `No items within ${radiusMiles} miles. Try increasing your radius in the nav.`
                 : 'Be the first to add something to your community!'}
           </p>
           {activeFilterCount > 0 ? (
@@ -296,7 +289,6 @@ return (
               />
             ))}
           </div>
-
           {hasMore && (
             <div style={{ textAlign: 'center', marginTop: '2.5rem' }}>
               <button
@@ -525,8 +517,8 @@ function FlagModal({ item, userId, onClose, onSuccess, showToast }: FlagModalPro
 useScrollLock()
 const supabase = createBrowserClient()
 const [loading, setLoading] = useState(false)
-const [reason, setReason] = useState(‘unavailable’)
-const [notes, setNotes] = useState(’’)
+const [reason, setReason]   = useState(‘unavailable’)
+const [notes, setNotes]     = useState(’’)
 
 async function submit(e: React.FormEvent) {
 e.preventDefault()
