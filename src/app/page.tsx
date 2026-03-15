@@ -1,4 +1,4 @@
-‘use client’
+'use client'
 import { useState, useEffect } from ‘react’
 import { createBrowserClient } from ‘@/lib/supabase’
 import type { User } from ‘@supabase/supabase-js’
