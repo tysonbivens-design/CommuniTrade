@@ -24,7 +24,6 @@ import type { Profile } from '@/types'
 import type { Page } from '@/types'
 export type { Page }
 
-// Supabase client created ONCE at module level — never recreated
 const supabase = createBrowserClient()
 
 export default function App() {
@@ -37,10 +36,10 @@ export default function App() {
   const [toast, setToast]             = useState<{ msg: string; type?: 'success' | 'error' } | null>(null)
   const [notifCount, setNotifCount]   = useState(0)
   const [notifToast, setNotifToast]   = useState<{ title: string; type: string } | null>(null)
-  const [showTour, setShowTour]               = useState(false)
-  const [showInstall, setShowInstall]         = useState(false)
-  const [showPushNudge, setShowPushNudge]     = useState(false)
-  const [activeLocation, setActiveLocation]   = useState<ActiveLocation>({ lat: null, lng: null, mode: 'home' })
+  const [showTour, setShowTour]           = useState(false)
+  const [showInstall, setShowInstall]     = useState(false)
+  const [showPushNudge, setShowPushNudge] = useState(false)
+  const [activeLocation, setActiveLocation] = useState<ActiveLocation>({ lat: null, lng: null, mode: 'home' })
 
   async function maybeNudgePush(uid: string) {
     if (typeof window === 'undefined') return
@@ -52,18 +51,16 @@ export default function App() {
     setShowPushNudge(true)
   }
 
-  // ── Detect email confirmation redirect ────────────────────────────────────
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('type') === 'signup') {
       window.history.replaceState({}, '', '/')
       setAuthMode('login')
       setShowAuth(true)
-      setTimeout(() => showToast('Email confirmed! Sign in to get started 🎉'), 300)
+      setTimeout(() => showToast('Email confirmed! Sign in to get started'), 300)
     }
   }, [])
 
-  // ── Auth state ────────────────────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       const u = session?.user ?? null
@@ -92,7 +89,6 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // ── Realtime notifications ────────────────────────────────────────────────
   useEffect(() => {
     if (!user?.id) return
     const channel = supabase
@@ -134,19 +130,9 @@ export default function App() {
   const isConfirmed = Boolean(user?.email_confirmed_at)
 
   function requireAuth(action: () => void) {
-    if (!user) {
-      setAuthMode('signup')
-      setShowAuth(true)
-      return
-    }
-    if (!isConfirmed) {
-      showToast('Please confirm your email before doing that. Check your inbox!', 'error')
-      return
-    }
-    if (profile?.suspended) {
-      showToast('Your account has been suspended. Please contact support@communitrade.app if you believe this is an error.', 'error')
-      return
-    }
+    if (!user) { setAuthMode('signup'); setShowAuth(true); return }
+    if (!isConfirmed) { showToast('Please confirm your email before doing that. Check your inbox!', 'error'); return }
+    if (profile?.suspended) { showToast('Your account has been suspended. Please contact support@communitrade.app if you believe this is an error.', 'error'); return }
     action()
   }
 
@@ -177,9 +163,7 @@ export default function App() {
         onLocationChange={setActiveLocation}
       />
 
-      {user && !isConfirmed && (
-        <ConfirmBanner email={user.email ?? ''} />
-      )}
+      {user && !isConfirmed && <ConfirmBanner email={user.email ?? ''} />}
 
       {page === 'home' && (
         user
@@ -229,9 +213,7 @@ export default function App() {
           onDone={() => { setShowTour(false); setShowInstall(true) }}
         />
       )}
-      {showInstall && (
-        <InstallPrompt onDone={() => setShowInstall(false)} />
-      )}
+      {showInstall && <InstallPrompt onDone={() => setShowInstall(false)} />}
 
       {showPushNudge && user && (
         <div style={{
@@ -246,7 +228,7 @@ export default function App() {
           }} onClick={e => e.stopPropagation()}>
             <div style={{ width: 40, height: 4, background: 'var(--border)', borderRadius: 2, margin: '0 auto 1.25rem' }} />
             <h3 style={{ fontFamily: 'Fraunces, serif', fontSize: '1.2rem', marginBottom: '0.4rem' }}>
-              Stay in the loop 🔔
+              Stay in the loop
             </h3>
             <p style={{ color: 'var(--muted)', fontSize: '0.88rem', marginBottom: '1.25rem', lineHeight: 1.6 }}>
               Get notified instantly when someone wants to borrow your items, a barter match is found, or a return is due.
