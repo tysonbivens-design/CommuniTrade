@@ -1,7 +1,7 @@
 // ─── CommuniTrade Shared Types ────────────────────────────────────────────────
 // Define once, use everywhere. No more `any` for core data shapes.
 
-export type Page = 'home' | 'library' | 'barter' | 'loans' | 'notifications' | 'profile' | 'admin'
+export type Page = 'home' | 'library' | 'barter' | 'loans' | 'notifications' | 'profile' | 'admin' | 'support'
 
 export type ItemCategory = 'Book' | 'DVD' | 'VHS' | 'CD' | 'Game' | 'Tool' | 'Home Good' | 'Other'
 export type ItemStatus = 'available' | 'loaned' | 'unavailable'
@@ -24,6 +24,7 @@ export interface Profile {
   review_count: number
   is_admin: boolean
   suspended: boolean
+  supporter: boolean
   lat: number | null
   lng: number | null
   radius_miles: number | null
