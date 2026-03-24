@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     event.type === 'checkout.session.completed' ||
     event.type === 'invoice.payment_succeeded'
   ) {
-    const session = event.data.object as Stripe.CheckoutSession
+    const session = event.data.object as Stripe.Checkout.Session
     const userId = session.metadata?.userId
 
     if (userId) {
@@ -44,7 +44,6 @@ export async function POST(req: NextRequest) {
   // Handle subscription cancellation
   if (event.type === 'customer.subscription.deleted') {
     const subscription = event.data.object as Stripe.Subscription
-    // Look up customer email to find profile
     try {
       const customer = await stripe.customers.retrieve(subscription.customer as string) as Stripe.Customer
       if (customer.email) {
