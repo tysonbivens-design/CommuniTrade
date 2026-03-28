@@ -77,6 +77,13 @@ export default function App() {
       setPage('library')
       setInitialItemId(itemId)
     }
+
+    // Direct page navigation via URL param
+    const pageParam = params.get('page')
+    if (pageParam && ['home','library','barter','loans','notifications','profile','support'].includes(pageParam)) {
+      window.history.replaceState({}, '', '/')
+      setPage(pageParam as any)
+    }
   }, [])
 
   // Auth state
