@@ -12,23 +12,24 @@ export default function FloatingSupport({ onNavigate }: FloatingSupportProps) {
       title="Support CommuniTrade"
       style={{
         position: 'fixed',
-        bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5rem)',
-        right: '1.25rem',
+        /* On mobile, sit well above the bottom tab bar so it doesn't overlap modals or share buttons */
+        bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5.5rem)',
+        right: '1rem',
         zIndex: 150,
         background: 'var(--bark)',
         color: '#fff',
         border: 'none',
         borderRadius: '2rem',
-        padding: '0.5rem 0.9rem',
-        fontSize: '0.82rem',
+        padding: '0.45rem 0.8rem',
+        fontSize: '0.78rem',
         fontFamily: 'DM Sans, sans-serif',
         fontWeight: 600,
         cursor: 'pointer',
         boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
         display: 'flex',
         alignItems: 'center',
-        gap: '0.35rem',
-        opacity: 0.9,
+        gap: '0.3rem',
+        opacity: 0.8,
         transition: 'opacity 0.2s, transform 0.2s',
       }}
       onMouseEnter={e => {
@@ -36,11 +37,11 @@ export default function FloatingSupport({ onNavigate }: FloatingSupportProps) {
         ;(e.currentTarget as HTMLButtonElement).style.transform = 'scale(1.05)'
       }}
       onMouseLeave={e => {
-        (e.currentTarget as HTMLButtonElement).style.opacity = '0.9'
+        (e.currentTarget as HTMLButtonElement).style.opacity = '0.8'
         ;(e.currentTarget as HTMLButtonElement).style.transform = 'scale(1)'
       }}
     >
-      ☕ Support Us
+      ☕ Support
     </button>
   )
 }
