@@ -25,12 +25,12 @@ import type { Profile } from '@/types'
 import type { Page } from '@/types'
 export type { Page }
 
-// Supabase client created ONCE at module level -- never recreated
 const supabase = createBrowserClient()
 
 export default function App() {
   const [page, setPage]               = useState<Page>('home')
   const [pendingModal, setPendingModal] = useState<'add' | 'ai' | null>(null)
+  const [initialItemId, setInitialItemId] = useState<string | null>(null)
   const [user, setUser]               = useState<User | null>(null)
   const [profile, setProfile]         = useState<Profile | null>(null)
   const [showAuth, setShowAuth]       = useState(false)
@@ -52,10 +52,11 @@ export default function App() {
     setShowPushNudge(true)
   }
 
-  // Detect redirects -- email confirmation and Stripe success
+  // Detect URL params on load
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
 
+    // Email confirmation redirect
     if (params.get('type') === 'signup') {
       window.history.replaceState({}, '', '/')
       setAuthMode('login')
@@ -63,9 +64,18 @@ export default function App() {
       setTimeout(() => showToast('Email confirmed! Sign in to get started'), 300)
     }
 
+    // Stripe success
     if (params.get('support') === 'success') {
       window.history.replaceState({}, '', '/')
       setTimeout(() => showToast('Thank you so much! You are keeping this community alive.'), 300)
+    }
+
+    // Deep link to specific item
+    const itemId = params.get('item')
+    if (itemId) {
+      window.history.replaceState({}, '', '/')
+      setPage('library')
+      setInitialItemId(itemId)
     }
   }, [])
 
@@ -183,7 +193,15 @@ export default function App() {
               onSignIn={() => { setAuthMode('login'); setShowAuth(true) }}
             />
       )}
-      {page === 'library'       && <LibraryPage ctx={ctx} initialModal={pendingModal} onModalOpened={() => setPendingModal(null)} />}
+      {page === 'library' && (
+        <LibraryPage
+          ctx={ctx}
+          initialModal={pendingModal}
+          onModalOpened={() => setPendingModal(null)}
+          initialItemId={initialItemId}
+          onItemOpened={() => setInitialItemId(null)}
+        />
+      )}
       {page === 'barter'        && <BarterPage ctx={ctx} />}
       {page === 'loans'         && <LoansPage ctx={ctx} />}
       {page === 'notifications' && <NotificationsPage ctx={ctx} onRead={() => loadNotifCount(user?.id ?? '')} />}
@@ -191,7 +209,6 @@ export default function App() {
       {page === 'admin'         && profile?.is_admin && <AdminPage ctx={ctx} />}
       {page === 'support'       && <SupportPage ctx={ctx} />}
 
-      {/* Floating support button -- hidden on the support page itself */}
       {page !== 'support' && <FloatingSupport onNavigate={navigate} />}
 
       {showAuth && (
