@@ -5,6 +5,7 @@ import ItemCard from './ItemCard'
 import BorrowModal from './BorrowModal'
 import AIUploadModal from './AIUploadModal'
 import ReportUserModal from './ReportUserModal'
+import ItemDetailModal from './ItemDetailModal'
 import styles from './LibraryPage.module.css'
 import modalStyles from './Modal.module.css'
 import type { Item, AppCtx, ItemCategory, OfferType, Condition } from '@/types'
@@ -44,7 +45,15 @@ async function fetchIGDBCover(title: string): Promise<{ cover_url: string | null
   return res.json()
 }
 
-export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx: AppCtx; initialModal?: 'add' | 'ai' | null; onModalOpened?: () => void }) {
+interface LibraryPageProps {
+  ctx: AppCtx
+  initialModal?: 'add' | 'ai' | null
+  onModalOpened?: () => void
+  initialItemId?: string | null
+  onItemOpened?: () => void
+}
+
+export default function LibraryPage({ ctx, initialModal, onModalOpened, initialItemId, onItemOpened }: LibraryPageProps) {
   const { user, profile, showToast, requireAuth } = ctx
   const supabase = createBrowserClient()
 
@@ -64,6 +73,26 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
   const [flagItem, setFlagItem] = useState<Item | null>(null)
   const [reportUser, setReportUser] = useState<{ userId: string; userName: string } | null>(null)
   const [showAI, setShowAI] = useState(false)
+  const [deepLinkedItem, setDeepLinkedItem] = useState<Item | null>(null)
+
+  // Handle deep link — fetch the item and open its modal
+  useEffect(() => {
+    if (!initialItemId) return
+    let cancelled = false
+    async function fetchLinkedItem() {
+      const { data } = await supabase
+        .from('items')
+        .select('*, profiles(full_name, trust_score, avatar_color, avatar_url, lat, lng)')
+        .eq('id', initialItemId)
+        .single()
+      if (!cancelled && data) {
+        setDeepLinkedItem(data as Item)
+        onItemOpened?.()
+      }
+    }
+    fetchLinkedItem()
+    return () => { cancelled = true }
+  }, [initialItemId])
 
   useEffect(() => {
     if (!initialModal) return
@@ -89,11 +118,9 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
 
   useEffect(() => {
     let cancelled = false
-
     async function loadItems() {
       setLoading(true)
       setError(null)
-
       let q = supabase
         .from('items')
         .select('*, profiles(full_name, trust_score, avatar_color, avatar_url, lat, lng)')
@@ -101,24 +128,15 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
         .eq('archived', false)
         .order('created_at', { ascending: false })
         .limit(DB_FETCH_LIMIT)
-
       if (category) q = q.eq('category', category)
       if (offerType) q = q.eq('offer_type', offerType)
       if (debouncedSearch) {
         q = q.or(`title.ilike.%${debouncedSearch}%,author_creator.ilike.%${debouncedSearch}%`)
       }
-
       const { data, error: fetchError } = await q
       if (cancelled) return
-
-      if (fetchError) {
-        setError('Could not load items. Please try refreshing.')
-        setLoading(false)
-        return
-      }
-
+      if (fetchError) { setError('Could not load items. Please try refreshing.'); setLoading(false); return }
       let results = (data as Item[]) || []
-
       if (userId && userLat && userLng && radiusMiles) {
         results = results.filter(item => {
           if (item.user_id === userId) return true
@@ -126,11 +144,9 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
           return distanceMiles(userLat, userLng, item.profiles.lat, item.profiles.lng) <= radiusMiles
         })
       }
-
       setAllItems(results)
       setLoading(false)
     }
-
     loadItems()
     return () => { cancelled = true }
   }, [category, offerType, debouncedSearch, userId, userLat, userLng, radiusMiles])
@@ -138,10 +154,7 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
   const availableGenres = useMemo(() => {
     if (!category || !GENRE_CATEGORIES.has(category)) return []
     const genres = new Set<string>()
-    allItems.forEach(item => {
-      const g = item.metadata?.genre
-      if (g) genres.add(g)
-    })
+    allItems.forEach(item => { const g = item.metadata?.genre; if (g) genres.add(g) })
     return Array.from(genres).sort()
   }, [allItems, category])
 
@@ -172,89 +185,48 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
               />
             </div>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>
-                + Add Item
-              </button>
-              <button className="btn btn-outline" onClick={() => requireAuth(() => setShowAI(true))} title="Bulk AI Upload">
-                📷 AI Upload
-              </button>
+              <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>+ Add Item</button>
+              <button className="btn btn-outline" onClick={() => requireAuth(() => setShowAI(true))} title="Bulk AI Upload">📷 AI Upload</button>
             </div>
           </div>
 
           <div className="tabs">
             {Object.entries(CAT_LABELS).map(([val, label]) => (
-              <button key={val} className={`tab ${category === val ? 'active' : ''}`} onClick={() => setCategory(val)}>
-                {label}
-              </button>
+              <button key={val} className={`tab ${category === val ? 'active' : ''}`} onClick={() => setCategory(val)}>{label}</button>
             ))}
           </div>
 
           <div className={styles.filtersRow}>
             <div className={styles.filterGroup}>
               {Object.entries(OFFER_LABELS).map(([val, label]) => (
-                <button
-                  key={val}
-                  className={`${styles.filterPill} ${offerType === val ? styles.filterPillActive : ''}`}
-                  onClick={() => setOfferType(val)}
-                >
-                  {label}
-                </button>
+                <button key={val} className={`${styles.filterPill} ${offerType === val ? styles.filterPillActive : ''}`} onClick={() => setOfferType(val)}>{label}</button>
               ))}
             </div>
             {availableGenres.length > 0 && (
               <div className={styles.filterGroup}>
-                <button
-                  className={`${styles.filterPill} ${genre === '' ? styles.filterPillActive : ''}`}
-                  onClick={() => setGenre('')}
-                >
-                  All Genres
-                </button>
+                <button className={`${styles.filterPill} ${genre === '' ? styles.filterPillActive : ''}`} onClick={() => setGenre('')}>All Genres</button>
                 {availableGenres.map(g => (
-                  <button
-                    key={g}
-                    className={`${styles.filterPill} ${genre === g ? styles.filterPillActive : ''}`}
-                    onClick={() => { setGenre(g); setVisibleCount(PAGE_SIZE) }}
-                  >
-                    {g}
-                  </button>
+                  <button key={g} className={`${styles.filterPill} ${genre === g ? styles.filterPillActive : ''}`} onClick={() => { setGenre(g); setVisibleCount(PAGE_SIZE) }}>{g}</button>
                 ))}
               </div>
             )}
             {activeFilterCount > 0 && (
-              <button className={styles.clearFilters} onClick={() => { setOfferType(''); setGenre('') }}>
-                ✕ Clear filters
-              </button>
+              <button className={styles.clearFilters} onClick={() => { setOfferType(''); setGenre('') }}>✕ Clear filters</button>
             )}
           </div>
 
           {loading ? (
-            <div className={styles.loadingGrid}>
-              {[...Array(8)].map((_, i) => <div key={i} className={styles.skeleton} />)}
-            </div>
+            <div className={styles.loadingGrid}>{[...Array(8)].map((_, i) => <div key={i} className={styles.skeleton} />)}</div>
           ) : error ? (
-            <div className={styles.empty}>
-              <div className={styles.emptyIcon}>⚠️</div>
-              <h3>Something went wrong</h3>
-              <p>{error}</p>
-            </div>
+            <div className={styles.empty}><div className={styles.emptyIcon}>⚠️</div><h3>Something went wrong</h3><p>{error}</p></div>
           ) : filteredItems.length === 0 ? (
             <div className={styles.empty}>
               <div className={styles.emptyIcon}>📚</div>
               <h3>Nothing matches</h3>
-              <p>
-                {activeFilterCount > 0
-                  ? 'Try clearing some filters to see more results.'
-                  : userId && radiusMiles
-                    ? `No items within ${radiusMiles} miles. Try increasing your radius in the nav.`
-                    : 'Be the first to add something to your community!'}
-              </p>
-              {activeFilterCount > 0 ? (
-                <button className="btn btn-outline" onClick={() => { setOfferType(''); setGenre('') }}>Clear Filters</button>
-              ) : (
-                <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>
-                  Add the first item
-                </button>
-              )}
+              <p>{activeFilterCount > 0 ? 'Try clearing some filters.' : userId && radiusMiles ? `No items within ${radiusMiles} miles.` : 'Be the first to add something!'}</p>
+              {activeFilterCount > 0
+                ? <button className="btn btn-outline" onClick={() => { setOfferType(''); setGenre('') }}>Clear Filters</button>
+                : <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>Add the first item</button>}
             </div>
           ) : (
             <>
@@ -271,11 +243,7 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
               </div>
               {hasMore && (
                 <div style={{ textAlign: 'center', marginTop: '2.5rem' }}>
-                  <button
-                    className="btn btn-outline btn-lg"
-                    onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
-                    style={{ minWidth: 200, padding: '0.9rem 2rem' }}
-                  >
+                  <button className="btn btn-outline btn-lg" onClick={() => setVisibleCount(c => c + PAGE_SIZE)} style={{ minWidth: 200, padding: '0.9rem 2rem' }}>
                     Load More · {filteredItems.length - visibleCount} remaining
                   </button>
                 </div>
@@ -284,6 +252,16 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
           )}
         </div>
       </div>
+
+      {/* Deep linked item modal */}
+      {deepLinkedItem && (
+        <ItemDetailModal
+          item={deepLinkedItem}
+          onClose={() => setDeepLinkedItem(null)}
+          onBorrow={item => { setDeepLinkedItem(null); requireAuth(() => setBorrowItem(item)) }}
+          onFlag={item => { setDeepLinkedItem(null); requireAuth(() => setFlagItem(item)) }}
+        />
+      )}
 
       {showAdd && (
         <AddItemModal
@@ -374,7 +352,6 @@ function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalPro
       let metadata: Record<string, unknown> = {}
       let cover_image_url: string | null = null
 
-      // Auto-fetch cover art from external APIs (unless user uploaded a photo)
       if (!pendingPhoto) {
         if (form.category === 'Book' && form.title) {
           try {
@@ -399,44 +376,25 @@ function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalPro
           try {
             const igdb = await fetchIGDBCover(form.title)
             if (igdb.cover_url) cover_image_url = igdb.cover_url
-            if (igdb.year || igdb.genres.length) {
-              metadata = { ...metadata, year: igdb.year ?? undefined, genre: igdb.genres[0] ?? undefined }
-            }
+            if (igdb.year || igdb.genres.length) metadata = { ...metadata, year: igdb.year ?? undefined, genre: igdb.genres[0] ?? undefined }
           } catch { /* optional */ }
         }
       }
 
-      // Create the item first to get its ID
       const res = await fetch('/api/items', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId,
-          items: [{
-            title: form.title,
-            author_creator: form.author_creator || null,
-            category: form.category,
-            offer_type: form.offer_type,
-            condition: form.condition,
-            notes: form.notes || null,
-            metadata,
-            cover_image_url,
-          }],
-        }),
+        body: JSON.stringify({ userId, items: [{ title: form.title, author_creator: form.author_creator || null, category: form.category, offer_type: form.offer_type, condition: form.condition, notes: form.notes || null, metadata, cover_image_url }] }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Could not add item')
 
-      // If user selected a photo, upload it now and update the item
       if (pendingPhoto && json.ids?.[0]) {
         setUploadingPhoto(true)
         const { url, error: uploadError } = await uploadItemPhoto(pendingPhoto, userId, json.ids[0])
         setUploadingPhoto(false)
-        if (uploadError) {
-          showToast(`Item added but photo upload failed: ${uploadError}`, 'error')
-        } else if (url) {
-          await supabase.from('items').update({ cover_image_url: url }).eq('id', json.ids[0])
-        }
+        if (uploadError) showToast(`Item added but photo upload failed: ${uploadError}`, 'error')
+        else if (url) await supabase.from('items').update({ cover_image_url: url }).eq('id', json.ids[0])
       }
 
       onSuccess()
@@ -494,8 +452,6 @@ function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalPro
             <label className="label">Notes</label>
             <textarea className="input" rows={2} value={form.notes} onChange={set('notes')} placeholder="Any details worth knowing..." />
           </div>
-
-          {/* Photo upload */}
           <div style={{ marginBottom: '1.25rem' }}>
             <label className="label">Photo (optional)</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -504,32 +460,18 @@ function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalPro
                 <img src={photoPreview} alt="preview" style={{ width: 48, height: 64, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--border)', flexShrink: 0 }} />
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                <button
-                  type="button"
-                  className="btn btn-outline btn-sm"
-                  onClick={() => photoInputRef.current?.click()}
-                >
+                <button type="button" className="btn btn-outline btn-sm" onClick={() => photoInputRef.current?.click()}>
                   {photoPreview ? '📷 Change Photo' : '📷 Upload Photo'}
                 </button>
                 <input ref={photoInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handlePhotoSelect} />
                 {photoPreview && (
-                  <button
-                    type="button"
-                    style={{ background: 'none', border: 'none', fontSize: '0.75rem', color: 'var(--muted)', cursor: 'pointer', textAlign: 'left', padding: 0 }}
-                    onClick={() => { setPendingPhoto(null); setPhotoPreview(null) }}
-                  >
-                    Remove
-                  </button>
+                  <button type="button" style={{ background: 'none', border: 'none', fontSize: '0.75rem', color: 'var(--muted)', cursor: 'pointer', textAlign: 'left', padding: 0 }}
+                    onClick={() => { setPendingPhoto(null); setPhotoPreview(null) }}>Remove</button>
                 )}
-                {!photoPreview && (
-                  <p style={{ fontSize: '0.75rem', color: 'var(--muted)', margin: 0 }}>
-                    Or we'll find cover art automatically
-                  </p>
-                )}
+                {!photoPreview && <p style={{ fontSize: '0.75rem', color: 'var(--muted)', margin: 0 }}>Or we will find cover art automatically</p>}
               </div>
             </div>
           </div>
-
           <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={isSubmitting}>
             {uploadingPhoto ? 'Uploading photo...' : loading ? <span className="spinner" /> : 'Add to Community Shelf'}
           </button>
@@ -560,9 +502,7 @@ function FlagModal({ item, userId, onClose, onSuccess, showToast }: FlagModalPro
     e.preventDefault()
     setLoading(true)
     try {
-      const { error } = await supabase.from('item_flags').insert({
-        item_id: item.id, user_id: userId, reason, notes,
-      })
+      const { error } = await supabase.from('item_flags').insert({ item_id: item.id, user_id: userId, reason, notes })
       if (error) throw error
       onSuccess()
     } catch (err: unknown) {
