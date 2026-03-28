@@ -7,7 +7,6 @@ import PushPrompt from './PushPrompt'
 import styles from './ProfilePage.module.css'
 import modalStyles from './Modal.module.css'
 import type { Item, AppCtx, OfferType, Condition } from '@/types'
-import { uploadItemPhoto } from '@/lib/uploadItemPhoto'
 
 const COLORS = ['#C4622D', '#5A7A5C', '#D4A843', '#6B4C3B', '#8B5CF6', '#059669', '#0EA5E9', '#EC4899']
 
@@ -475,11 +474,55 @@ function EditItemModal({ item, userId, onClose, onSave, showToast }: EditItemMod
   async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
+    if (file.size > 5 * 1024 * 1024) { showToast('Image must be under 5MB', 'error'); return }
+    if (!file.type.startsWith('image/')) { showToast('Please select an image file', 'error'); return }
     setUploadingPhoto(true)
     try {
-      const { url, error } = await uploadItemPhoto(file, userId, item.id)
-      if (error) { showToast(error, 'error'); return }
-      if (url) { setCoverUrl(url); showToast('Photo uploaded! Save to keep it.') }
+      // Compress client-side
+      const compressed = await new Promise<Blob>((resolve, reject) => {
+        const img = new Image()
+        const url = URL.createObjectURL(file)
+        img.onload = () => {
+          URL.revokeObjectURL(url)
+          const scale = Math.min(1, 800 / Math.max(img.width, img.height))
+          const canvas = document.createElement('canvas')
+          canvas.width = Math.round(img.width * scale)
+          canvas.height = Math.round(img.height * scale)
+          canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
+          canvas.toBlob(b => b ? resolve(b) : reject(new Error('Compression failed')), 'image/jpeg', 0.8)
+        }
+        img.onerror = reject
+        img.src = url
+      })
+
+      // Moderate via Claude Haiku
+      const b64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve((reader.result as string).split(',')[1])
+        reader.onerror = reject
+        reader.readAsDataURL(compressed)
+      })
+      const modRes = await fetch('/api/moderate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64: b64, mediaType: 'image/jpeg' }),
+      })
+      const modData = await modRes.json()
+      if (modData.flagged) { showToast('This image was flagged as inappropriate.', 'error'); return }
+
+      // Upload directly using the component supabase instance
+      const path = 
+      const { error: uploadError } = await supabase.storage
+        .from('item-covers')
+        .upload(path, compressed, { upsert: true, contentType: 'image/jpeg' })
+      if (uploadError) throw uploadError
+
+      const { data: { publicUrl } } = supabase.storage.from('item-covers').getPublicUrl(path)
+      const url = 
+      setCoverUrl(url)
+      showToast('Photo uploaded! Save to keep it.')
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Upload failed', 'error')
     } finally {
       setUploadingPhoto(false)
       if (photoInputRef.current) photoInputRef.current.value = ''
