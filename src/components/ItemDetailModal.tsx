@@ -1,9 +1,8 @@
 'use client'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import Avatar from './Avatar'
-import modalStyles from './Modal.module.css'
 import styles from './ItemDetailModal.module.css'
-import type { Item, AppCtx } from '@/types'
+import type { Item } from '@/types'
 
 const CONDITION_LABEL: Record<string, string> = {
   excellent: '✨ Excellent',
@@ -18,6 +17,8 @@ const OFFER_LABEL: Record<string, string> = {
   free:   '🎁 Free / Give Away',
 }
 
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://communitrade.app'
+
 interface ItemDetailModalProps {
   item: Item
   onClose: () => void
@@ -28,12 +29,30 @@ interface ItemDetailModalProps {
 
 export default function ItemDetailModal({ item, onClose, onBorrow, onFlag, isOwnItem }: ItemDetailModalProps) {
   const isAvailable = item.status === 'available'
+  const [copied, setCopied] = useState(false)
 
-  // Lock body scroll while modal is open
   useEffect(() => {
     document.body.style.overflow = 'hidden'
     return () => { document.body.style.overflow = '' }
   }, [])
+
+  function handleShare() {
+    const url = `${APP_URL}?item=${item.id}`
+    if (navigator.share) {
+      navigator.share({
+        title: item.title,
+        text: `Check out "${item.title}" on CommuniTrade — free community lending and trading!`,
+        url,
+      }).catch(() => {})
+    } else {
+      navigator.clipboard.writeText(url).then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      }).catch(() => {})
+    }
+  }
+
+  const emoji = { Book: '📚', DVD: '🎬', VHS: '📼', CD: '🎵', Game: '🎲', Tool: '🔧', 'Home Good': '🏠', Other: '📦' }[item.category] || '📦'
 
   return (
     <div className={styles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
@@ -48,86 +67,89 @@ export default function ItemDetailModal({ item, onClose, onBorrow, onFlag, isOwn
             // eslint-disable-next-line @next/next/no-img-element
             <img src={item.cover_image_url} alt={item.title} className={styles.coverImg} />
           ) : (
-            <span className={styles.heroEmoji}>
-              {{ Book: '📚', DVD: '🎬', VHS: '📼', CD: '🎵', Game: '🎲', Tool: '🔧', 'Home Good': '🏠', Other: '📦' }[item.category] || '📦'}
-            </span>
+            <span className={styles.heroEmoji}>{emoji}</span>
           )}
           <span className={`badge ${isAvailable ? 'badge-available' : 'badge-loaned'} ${styles.heroBadge}`}>
             {isAvailable ? 'Available' : 'On Loan'}
           </span>
         </div>
 
-        {/* Content */}
         <div className={styles.body}>
-          <div className={styles.categoryPill}>{item.category}</div>
+          <span className={styles.categoryPill}>{item.category}</span>
           <h2 className={styles.title}>{item.title}</h2>
-          {item.author_creator && (
-            <p className={styles.author}>{item.author_creator}</p>
-          )}
+          {item.author_creator && <p className={styles.author}>{item.author_creator}</p>}
 
-          {/* Metadata row */}
-          {(item.metadata?.year || item.metadata?.genre || item.metadata?.publisher) && (
-            <div className={styles.metaRow}>
-              {item.metadata.year && <span>{item.metadata.year}</span>}
-              {item.metadata.genre && <span>{item.metadata.genre}</span>}
-              {item.metadata.publisher && <span>{item.metadata.publisher}</span>}
-            </div>
-          )}
+          <div className={styles.metaRow}>
+            {item.metadata?.year && <span>{item.metadata.year}</span>}
+            {item.metadata?.genre && <span>{item.metadata.genre}</span>}
+            {item.condition && <span>{CONDITION_LABEL[item.condition] || item.condition}</span>}
+          </div>
 
-          {/* Offer + condition pills */}
           <div className={styles.pillRow}>
             <span className={styles.offerPill}>{OFFER_LABEL[item.offer_type] || item.offer_type}</span>
-            <span className={styles.conditionPill}>{CONDITION_LABEL[item.condition] || item.condition}</span>
           </div>
 
-          {/* Notes */}
           {item.notes && (
-            <div className={styles.notes}>
-              <p className={styles.notesLabel}>Notes from owner</p>
-              <p className={styles.notesText}>{item.notes}</p>
+            <p style={{ fontSize: '0.88rem', color: 'var(--muted)', marginBottom: '1rem', fontStyle: 'italic', lineHeight: 1.6 }}>
+              {item.notes}
+            </p>
+          )}
+
+          {item.profiles && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem', padding: '0.75rem', background: 'var(--cream)', borderRadius: 8 }}>
+              <Avatar name={item.profiles.full_name} avatarUrl={item.profiles.avatar_url} color={item.profiles.avatar_color} size={32} />
+              <div>
+                <div style={{ fontSize: '0.88rem', fontWeight: 600 }}>{item.profiles.full_name}</div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>⭐ {item.profiles.trust_score?.toFixed(1) || '5.0'} trust score</div>
+              </div>
             </div>
           )}
 
-          {/* Lender info */}
-          <div className={styles.lenderRow}>
-            <Avatar
-              name={item.profiles?.full_name}
-              avatarUrl={item.profiles?.avatar_url}
-              color={item.profiles?.avatar_color}
-              size={36}
-            />
-            <div>
-              <p className={styles.lenderName}>{item.profiles?.full_name || 'A neighbor'}</p>
-              <p className={styles.lenderTrust}>⭐ {item.profiles?.trust_score?.toFixed(1) || '5.0'} trust score</p>
-            </div>
-          </div>
-
-          {/* Actions */}
-          {!isOwnItem && (
-            <div className={styles.actions}>
-              {isAvailable ? (
+          {/* Action buttons */}
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            {!isOwnItem && (
+              isAvailable ? (
                 <button
                   className="btn btn-primary btn-lg"
                   style={{ flex: 1 }}
                   onClick={() => { onClose(); onBorrow(item) }}
                 >
-                  Request to Borrow 📬
+                  Request to Borrow
                 </button>
               ) : (
                 <button className="btn btn-outline btn-lg" style={{ flex: 1 }} disabled>
                   Currently On Loan
                 </button>
-              )}
+              )
+            )}
+
+            {/* Share button */}
+            <button
+              onClick={handleShare}
+              title="Share this item"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '0.35rem',
+                padding: '0.6rem 0.9rem', borderRadius: 8, fontSize: '0.85rem',
+                border: '1.5px solid var(--border)', background: copied ? 'var(--sage)' : '#fff',
+                color: copied ? '#fff' : 'var(--bark)', cursor: 'pointer',
+                fontFamily: 'DM Sans, sans-serif', fontWeight: 600,
+                transition: 'all 0.2s', flexShrink: 0,
+              }}
+            >
+              {copied ? '✓ Copied!' : '🔗 Share'}
+            </button>
+
+            {!isOwnItem && (
               <button
                 className="btn btn-ghost btn-sm"
                 onClick={() => { onClose(); onFlag(item) }}
                 title="Flag this listing"
-                style={{ color: 'var(--muted)', fontSize: '1rem' }}
+                style={{ color: 'var(--muted)', fontSize: '1rem', flexShrink: 0 }}
               >
                 🚩
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>
