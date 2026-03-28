@@ -511,7 +511,7 @@ function EditItemModal({ item, userId, onClose, onSave, showToast }: EditItemMod
       if (modData.flagged) { showToast('This image was flagged as inappropriate.', 'error'); return }
 
       // Upload directly using the component supabase instance
-      const path = 
+      const path = `${userId}/${item.id}.jpg`
       const { error: uploadError } = await supabase.storage
         .from('item-covers')
         .upload(path, compressed, { upsert: true, contentType: 'image/jpeg' })
