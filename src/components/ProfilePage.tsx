@@ -7,6 +7,7 @@ import PushPrompt from './PushPrompt'
 import styles from './ProfilePage.module.css'
 import modalStyles from './Modal.module.css'
 import type { Item, AppCtx, OfferType, Condition } from '@/types'
+import { uploadItemPhoto } from '@/lib/uploadItemPhoto'
 
 const COLORS = ['#C4622D', '#5A7A5C', '#D4A843', '#6B4C3B', '#8B5CF6', '#059669', '#0EA5E9', '#EC4899']
 
@@ -56,35 +57,25 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
         .eq('user_id', uid)
         .eq('archived', false)
         .order('created_at', { ascending: false }),
-
       supabase
         .from('reviews')
         .select('*, reviewer:profiles!reviews_reviewer_id_fkey(full_name, avatar_color, avatar_url)')
         .eq('reviewee_id', uid)
         .order('created_at', { ascending: false }),
-
       supabase
         .from('loans')
         .select('*', { count: 'exact', head: true })
         .eq('lender_id', uid)
         .eq('status', 'returned'),
     ])
-
     if (!itemsResult.error) setItems((itemsResult.data as Item[]) || [])
     if (!reviewsResult.error) setReviews((reviewsResult.data as Review[]) || [])
-    setStats({
-      shared: itemsResult.data?.length || 0,
-      loans: loansResult.count || 0,
-      trades: 0,
-    })
+    setStats({ shared: itemsResult.data?.length || 0, loans: loansResult.count || 0, trades: 0 })
   }
 
   async function archiveItem(item: Item) {
     if (!userId) return
-    if (item.status === 'loaned') {
-      showToast('Cannot remove an item that is currently on loan', 'error')
-      return
-    }
+    if (item.status === 'loaned') { showToast('Cannot remove an item that is currently on loan', 'error'); return }
     if (!window.confirm(`Remove "${item.title}" from your inventory?`)) return
     const { error } = await supabase.from('items').update({ archived: true }).eq('id', item.id)
     if (error) { showToast(error.message, 'error'); return }
@@ -96,7 +87,7 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
   function handleItemSaved(updated: Item) {
     setItems(prev => prev.map(i => i.id === updated.id ? { ...i, ...updated } : i))
     setEditItem(null)
-    showToast('Item updated ✅')
+    showToast('Item updated')
   }
 
   async function updateColor(color: string) {
@@ -111,41 +102,21 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
   async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file || !userId) return
-
-    if (!file.type.startsWith('image/')) {
-      showToast('Please select an image file', 'error')
-      return
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      showToast('Image must be under 5MB', 'error')
-      return
-    }
-
+    if (!file.type.startsWith('image/')) { showToast('Please select an image file', 'error'); return }
+    if (file.size > 5 * 1024 * 1024) { showToast('Image must be under 5MB', 'error'); return }
     setUploadingAvatar(true)
     try {
       const ext = file.name.split('.').pop() || 'jpg'
       const path = `${userId}/avatar.${ext}`
-
       const { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(path, file, { upsert: true, contentType: file.type })
-
       if (uploadError) throw uploadError
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(path)
-
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
       const urlWithBust = `${publicUrl}?t=${Date.now()}`
-
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ avatar_url: urlWithBust })
-        .eq('id', userId)
-
+      const { error: updateError } = await supabase.from('profiles').update({ avatar_url: urlWithBust }).eq('id', userId)
       if (updateError) throw updateError
-
-      showToast('Photo updated! ✅')
+      showToast('Photo updated!')
       onProfileUpdate(userId)
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : 'Upload failed', 'error')
@@ -178,7 +149,6 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
       <div className={styles.profileHeader}>
         <div className="container">
           <div className={styles.headerInner}>
-
             <div style={{ position: 'relative', display: 'inline-block' }}>
               <Avatar
                 name={profile?.full_name}
@@ -187,7 +157,6 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
                 size={80}
                 style={{ border: '3px solid var(--gold)', fontSize: '2.2rem', fontFamily: 'Fraunces, serif', fontWeight: 600 }}
               />
-
               <button
                 className={styles.editAvatarBtn}
                 onClick={() => fileInputRef.current?.click()}
@@ -197,27 +166,18 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
               >
                 {uploadingAvatar ? '⏳' : '📷'}
               </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                style={{ display: 'none' }}
-                onChange={handleAvatarUpload}
-              />
-
+              <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
               <button
                 onClick={() => setEditColor(!editColor)}
                 title="Change color"
                 style={{
                   position: 'absolute', bottom: -24, left: '50%', transform: 'translateX(-50%)',
                   background: 'none', border: 'none', color: 'rgba(255,255,255,0.55)',
-                  fontSize: '0.7rem', cursor: 'pointer', whiteSpace: 'nowrap',
-                  fontFamily: 'DM Sans, sans-serif',
+                  fontSize: '0.7rem', cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'DM Sans, sans-serif',
                 }}
               >
                 🎨 color
               </button>
-
               {editColor && (
                 <div className={styles.colorPicker}>
                   {COLORS.map(c => (
@@ -277,20 +237,14 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
                 {items.map(item => (
                   <div key={item.id} style={{ position: 'relative' }}>
                     <ItemCard item={item} onBorrow={() => {}} onFlag={() => {}} isOwnItem />
-
-                    <div style={{
-                      position: 'absolute', top: '0.5rem', left: '0.5rem',
-                      display: 'flex', gap: '0.35rem', zIndex: 2,
-                    }}>
+                    <div style={{ position: 'absolute', top: '0.5rem', left: '0.5rem', display: 'flex', gap: '0.35rem', zIndex: 2 }}>
                       <button
                         onClick={() => item.status !== 'loaned' && setEditItem(item)}
                         title={item.status === 'loaned' ? 'Cannot edit while on loan' : 'Edit item'}
                         style={{
                           background: item.status === 'loaned' ? 'rgba(0,0,0,0.25)' : 'rgba(61,43,31,0.75)',
-                          color: '#fff', border: 'none', borderRadius: 6,
-                          padding: '0.2rem 0.5rem', fontSize: '0.72rem',
-                          cursor: item.status === 'loaned' ? 'not-allowed' : 'pointer',
-                          backdropFilter: 'blur(4px)',
+                          color: '#fff', border: 'none', borderRadius: 6, padding: '0.2rem 0.5rem', fontSize: '0.72rem',
+                          cursor: item.status === 'loaned' ? 'not-allowed' : 'pointer', backdropFilter: 'blur(4px)',
                         }}
                       >
                         ✏️ Edit
@@ -300,10 +254,8 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
                         title={item.status === 'loaned' ? 'Cannot remove while on loan' : 'Remove item'}
                         style={{
                           background: item.status === 'loaned' ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.55)',
-                          color: '#fff', border: 'none', borderRadius: 6,
-                          padding: '0.2rem 0.5rem', fontSize: '0.72rem',
-                          cursor: item.status === 'loaned' ? 'not-allowed' : 'pointer',
-                          backdropFilter: 'blur(4px)',
+                          color: '#fff', border: 'none', borderRadius: 6, padding: '0.2rem 0.5rem', fontSize: '0.72rem',
+                          cursor: item.status === 'loaned' ? 'not-allowed' : 'pointer', backdropFilter: 'blur(4px)',
                         }}
                       >
                         🗑 Remove
@@ -342,7 +294,7 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
             <ProfileSettingsForm
               userId={userId}
               profile={profile}
-              onSaved={() => { onProfileUpdate(userId); showToast('Profile updated ✅') }}
+              onSaved={() => { onProfileUpdate(userId); showToast('Profile updated') }}
               showToast={showToast}
             />
           )}
@@ -352,6 +304,7 @@ export default function ProfilePage({ ctx, onProfileUpdate }: ProfilePageProps) 
       {editItem && (
         <EditItemModal
           item={editItem}
+          userId={userId}
           onClose={() => setEditItem(null)}
           onSave={handleItemSaved}
           showToast={showToast}
@@ -383,8 +336,7 @@ function ProfileSettingsForm({ userId, profile, onSaved, showToast }: ProfileSet
   }, [profile?.full_name, profile?.zip_code])
 
   const set = (k: keyof typeof form) =>
-    (e: React.ChangeEvent<HTMLInputElement>) =>
-      setForm(f => ({ ...f, [k]: e.target.value }))
+    (e: React.ChangeEvent<HTMLInputElement>) => setForm(f => ({ ...f, [k]: e.target.value }))
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -394,21 +346,16 @@ function ProfileSettingsForm({ userId, profile, onSaved, showToast }: ProfileSet
         full_name: form.full_name.trim(),
         zip_code: form.zip_code.trim(),
       }
-
       if (form.zip_code.trim() !== profile?.zip_code) {
         try {
           const res = await fetch(`https://api.zippopotam.us/us/${form.zip_code.trim()}`)
           if (res.ok) {
             const data = await res.json()
             const place = data.places?.[0]
-            if (place) {
-              patch.lat = parseFloat(place.latitude)
-              patch.lng = parseFloat(place.longitude)
-            }
+            if (place) { patch.lat = parseFloat(place.latitude); patch.lng = parseFloat(place.longitude) }
           }
         } catch { /* optional geocode */ }
       }
-
       const { error } = await supabase.from('profiles').update(patch).eq('id', userId)
       if (error) throw error
       onSaved()
@@ -421,60 +368,34 @@ function ProfileSettingsForm({ userId, profile, onSaved, showToast }: ProfileSet
 
   return (
     <div style={{ maxWidth: 480, display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-
-      {/* ── Edit Profile ── */}
       <div>
         <h2 style={{ fontFamily: 'Fraunces, serif', fontSize: '1.2rem', marginBottom: '1.5rem' }}>Edit Profile</h2>
         <form onSubmit={submit}>
           <div className="form-group">
             <label className="label">Display Name</label>
-            <input
-              className="input"
-              value={form.full_name}
-              onChange={set('full_name')}
-              placeholder="Your name"
-              required
-            />
+            <input className="input" value={form.full_name} onChange={set('full_name')} placeholder="Your name" required />
           </div>
           <div className="form-group">
             <label className="label">Zip Code</label>
-            <input
-              className="input"
-              value={form.zip_code}
-              onChange={set('zip_code')}
-              placeholder="12345"
-              maxLength={5}
-              pattern="\d{5}"
-              title="5-digit US zip code"
-              required
-            />
+            <input className="input" value={form.zip_code} onChange={set('zip_code')} placeholder="12345" maxLength={5} pattern="\d{5}" title="5-digit US zip code" required />
             <p style={{ fontSize: '0.78rem', color: 'var(--muted)', marginTop: '0.35rem' }}>
               Changing your zip will update your location for radius filtering.
             </p>
           </div>
-          <button
-            type="submit"
-            className="btn btn-primary"
-            style={{ minWidth: 140 }}
-            disabled={loading}
-          >
+          <button type="submit" className="btn btn-primary" style={{ minWidth: 140 }} disabled={loading}>
             {loading ? <span className="spinner" /> : 'Save Changes'}
           </button>
         </form>
       </div>
 
-      {/* ── Notifications ── */}
       <div>
-        <h2 style={{ fontFamily: 'Fraunces, serif', fontSize: '1.2rem', marginBottom: '0.4rem' }}>
-          Notifications
-        </h2>
+        <h2 style={{ fontFamily: 'Fraunces, serif', fontSize: '1.2rem', marginBottom: '0.4rem' }}>Notifications</h2>
         <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '1.25rem', lineHeight: 1.6 }}>
           Push notifications let you know instantly when someone wants to borrow your items,
           a barter match is found, or a return is due — no email required.
         </p>
         <PushPrompt userId={userId} />
       </div>
-
     </div>
   )
 }
@@ -494,21 +415,22 @@ const CONDITION_OPTIONS = [
   { value: 'worn', label: 'Worn' },
 ]
 
-const CATEGORY_OPTIONS = [
-  'Book', 'DVD', 'VHS', 'CD', 'Game', 'Tool', 'Home Good', 'Other',
-]
+const CATEGORY_OPTIONS = ['Book', 'DVD', 'VHS', 'CD', 'Game', 'Tool', 'Home Good', 'Other']
 
 interface EditItemModalProps {
   item: Item
+  userId: string
   onClose: () => void
   onSave: (updated: Item) => void
   showToast: AppCtx['showToast']
 }
 
-function EditItemModal({ item, onClose, onSave, showToast }: EditItemModalProps) {
+function EditItemModal({ item, userId, onClose, onSave, showToast }: EditItemModalProps) {
   const supabase = createBrowserClient()
   const [loading, setLoading] = useState(false)
   const [fetchingCover, setFetchingCover] = useState(false)
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const photoInputRef = useRef<HTMLInputElement>(null)
   const [form, setForm] = useState({
     title: item.title || '',
     author_creator: item.author_creator || '',
@@ -528,37 +450,39 @@ function EditItemModal({ item, onClose, onSave, showToast }: EditItemModalProps)
     setFetchingCover(true)
     try {
       let url: string | null = null
-
       if (form.category === 'Book') {
         const res = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(form.title)}&limit=1`)
         const data = await res.json()
-        if (data.docs?.[0]?.cover_i) {
-          url = `https://covers.openlibrary.org/b/id/${data.docs[0].cover_i}-M.jpg`
-        }
+        if (data.docs?.[0]?.cover_i) url = `https://covers.openlibrary.org/b/id/${data.docs[0].cover_i}-M.jpg`
       } else if (form.category === 'DVD' || form.category === 'VHS') {
         const res = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(form.title)}&apikey=${process.env.NEXT_PUBLIC_OMDB_API_KEY || 'd5714ece'}`)
         const data = await res.json()
         if (data.Poster && data.Poster !== 'N/A') url = data.Poster
       } else if (form.category === 'Game') {
-        const res = await fetch('/api/igdb', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: form.title }),
-        })
+        const res = await fetch('/api/igdb', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: form.title }) })
         const data = await res.json()
         if (data.cover_url) url = data.cover_url
       }
-
-      if (url) {
-        setCoverUrl(url)
-        showToast('Cover art found! Save to keep it.')
-      } else {
-        showToast('No cover found for this title.', 'error')
-      }
+      if (url) { setCoverUrl(url); showToast('Cover art found! Save to keep it.') }
+      else showToast('No cover found for this title.', 'error')
     } catch {
       showToast('Could not fetch cover art.', 'error')
     } finally {
       setFetchingCover(false)
+    }
+  }
+
+  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadingPhoto(true)
+    try {
+      const { url, error } = await uploadItemPhoto(file, userId, item.id)
+      if (error) { showToast(error, 'error'); return }
+      if (url) { setCoverUrl(url); showToast('Photo uploaded! Save to keep it.') }
+    } finally {
+      setUploadingPhoto(false)
+      if (photoInputRef.current) photoInputRef.current.value = ''
     }
   }
 
@@ -595,7 +519,6 @@ function EditItemModal({ item, onClose, onSave, showToast }: EditItemModalProps)
         <p className={modalStyles.subtitle} style={{ marginBottom: '1.25rem' }}>
           Currently <strong style={{ color: item.status === 'available' ? 'var(--sage)' : 'var(--muted)' }}>{item.status}</strong>
         </p>
-
         <form onSubmit={submit}>
           <div className="form-group">
             <label className="label">Title</label>
@@ -603,7 +526,7 @@ function EditItemModal({ item, onClose, onSave, showToast }: EditItemModalProps)
           </div>
           <div className="form-group">
             <label className="label">Author / Creator</label>
-            <input className="input" value={form.author_creator} onChange={set('author_creator')} placeholder="e.g. Toni Morrison, Stanley Kubrick…" />
+            <input className="input" value={form.author_creator} onChange={set('author_creator')} placeholder="e.g. Toni Morrison, Stanley Kubrick..." />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
             <div className="form-group">
@@ -627,40 +550,49 @@ function EditItemModal({ item, onClose, onSave, showToast }: EditItemModalProps)
           </div>
           <div className="form-group">
             <label className="label">Notes</label>
-            <textarea className="input" rows={2} value={form.notes} onChange={set('notes')} placeholder="Any details worth knowing…" />
+            <textarea className="input" rows={2} value={form.notes} onChange={set('notes')} placeholder="Any details worth knowing..." />
           </div>
 
-          {/* ── Cover art ── */}
-          {canFetchCover && (
-            <div style={{ marginBottom: '1.25rem' }}>
-              <label className="label">Cover Art</label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                {coverUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={coverUrl} alt="cover" style={{ width: 48, height: 64, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--border)', flexShrink: 0 }} />
-                )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+          {/* Cover / Photo section */}
+          <div style={{ marginBottom: '1.25rem' }}>
+            <label className="label">Cover / Photo</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              {coverUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={coverUrl} alt="cover" style={{ width: 48, height: 64, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--border)', flexShrink: 0 }} />
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => photoInputRef.current?.click()}
+                  disabled={uploadingPhoto}
+                >
+                  {uploadingPhoto ? <span className="spinner" /> : coverUrl ? '📷 Replace Photo' : '📷 Upload Photo'}
+                </button>
+                <input ref={photoInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handlePhotoUpload} />
+                {canFetchCover && (
                   <button
                     type="button"
                     className="btn btn-outline btn-sm"
                     onClick={fetchCover}
                     disabled={fetchingCover || !form.title}
                   >
-                    {fetchingCover ? <span className="spinner" /> : coverUrl ? '🔄 Re-fetch Cover' : '🎨 Fetch Cover Art'}
+                    {fetchingCover ? <span className="spinner" /> : '🎨 Fetch Cover Art'}
                   </button>
-                  {coverUrl && (
-                    <button
-                      type="button"
-                      style={{ background: 'none', border: 'none', fontSize: '0.75rem', color: 'var(--muted)', cursor: 'pointer', textAlign: 'left', padding: 0 }}
-                      onClick={() => setCoverUrl(null)}
-                    >
-                      Remove cover
-                    </button>
-                  )}
-                </div>
+                )}
+                {coverUrl && (
+                  <button
+                    type="button"
+                    style={{ background: 'none', border: 'none', fontSize: '0.75rem', color: 'var(--muted)', cursor: 'pointer', textAlign: 'left', padding: 0 }}
+                    onClick={() => setCoverUrl(null)}
+                  >
+                    Remove cover
+                  </button>
+                )}
               </div>
             </div>
-          )}
+          </div>
 
           <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
             {loading ? <span className="spinner" /> : 'Save Changes'}
