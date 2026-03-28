@@ -10,6 +10,16 @@ const EMOJIS: Record<string, string> = {
   Game: '🎲', Tool: '🔧', 'Home Good': '🏠', Other: '📦',
 }
 
+function getCardActionLabel(offerType: string): string {
+  switch (offerType) {
+    case 'free':   return 'Claim'
+    case 'swap':   return 'Swap'
+    case 'barter': return 'Trade'
+    case 'lend':
+    default:       return 'Borrow'
+  }
+}
+
 interface ItemCardProps {
   item: Item
   onBorrow: (item: Item) => void
@@ -23,6 +33,7 @@ export default function ItemCard({ item, onBorrow, onFlag, onReportUser, isOwnIt
   const [menuOpen, setMenuOpen] = useState(false)
   const emoji = EMOJIS[item.category] || '📦'
   const isAvailable = item.status === 'available'
+  const actionLabel = getCardActionLabel(item.offer_type)
 
   return (
     <>
@@ -30,6 +41,7 @@ export default function ItemCard({ item, onBorrow, onFlag, onReportUser, isOwnIt
         <div className={styles.imgArea} style={{ background: `linear-gradient(135deg, ${item.profiles?.avatar_color || '#C4622D'}22, ${item.profiles?.avatar_color || '#5A7A5C'}33)` }}>
           <span className={styles.emoji}>{emoji}</span>
           {item.cover_image_url && (
+            // eslint-disable-next-line @next/next/no-img-element
             <img src={item.cover_image_url} alt={item.title} className={styles.coverImg} />
           )}
           <span className={`badge ${isAvailable ? 'badge-available' : 'badge-loaned'} ${styles.badge}`}>
@@ -59,7 +71,7 @@ export default function ItemCard({ item, onBorrow, onFlag, onReportUser, isOwnIt
                   className="btn btn-primary btn-sm"
                   onClick={e => { e.stopPropagation(); onBorrow(item) }}
                 >
-                  Borrow
+                  {actionLabel}
                 </button>
               ) : (
                 <button className="btn btn-outline btn-sm" disabled>On Loan</button>
