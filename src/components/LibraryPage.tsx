@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { createBrowserClient } from '@/lib/supabase'
 import ItemCard from './ItemCard'
 import BorrowModal from './BorrowModal'
@@ -9,6 +9,7 @@ import styles from './LibraryPage.module.css'
 import modalStyles from './Modal.module.css'
 import type { Item, AppCtx, ItemCategory, OfferType, Condition } from '@/types'
 import { useScrollLock } from '@/lib/useScrollLock'
+import { uploadItemPhoto } from '@/lib/uploadItemPhoto'
 
 const PAGE_SIZE = 20
 const DB_FETCH_LIMIT = 500
@@ -22,7 +23,6 @@ const CAT_LABELS: Record<string, string> = {
 const OFFER_LABELS: Record<string, string> = {
   '': 'Any Type', lend: '🤝 Lend', swap: '🔄 Swap', barter: '⚖️ Barter', free: '🎁 Free',
 }
-// Categories where genre filtering makes sense
 const GENRE_CATEGORIES = new Set(['Book', 'DVD', 'VHS', 'CD'])
 
 function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -34,6 +34,16 @@ function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): 
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
+async function fetchIGDBCover(title: string): Promise<{ cover_url: string | null; year: number | null; genres: string[] }> {
+  const res = await fetch('/api/igdb', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  })
+  if (!res.ok) return { cover_url: null, year: null, genres: [] }
+  return res.json()
+}
+
 export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx: AppCtx; initialModal?: 'add' | 'ai' | null; onModalOpened?: () => void }) {
   const { user, profile, showToast, requireAuth } = ctx
   const supabase = createBrowserClient()
@@ -43,21 +53,18 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Filters
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [category, setCategory] = useState('')
   const [offerType, setOfferType] = useState('')
   const [genre, setGenre] = useState('')
 
-  // Modals
   const [showAdd, setShowAdd] = useState(false)
   const [borrowItem, setBorrowItem] = useState<Item | null>(null)
   const [flagItem, setFlagItem] = useState<Item | null>(null)
   const [reportUser, setReportUser] = useState<{ userId: string; userName: string } | null>(null)
   const [showAI, setShowAI] = useState(false)
 
-  // Open modal immediately if navigated here with one pending
   useEffect(() => {
     if (!initialModal) return
     if (initialModal === 'add') requireAuth(() => setShowAdd(true))
@@ -70,7 +77,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
     return () => clearTimeout(timer)
   }, [search])
 
-  // Reset pagination and genre when top-level filters change
   useEffect(() => {
     setVisibleCount(PAGE_SIZE)
     setGenre('')
@@ -98,8 +104,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
 
       if (category) q = q.eq('category', category)
       if (offerType) q = q.eq('offer_type', offerType)
-
-      // Search both title and author_creator
       if (debouncedSearch) {
         q = q.or(`title.ilike.%${debouncedSearch}%,author_creator.ilike.%${debouncedSearch}%`)
       }
@@ -115,7 +119,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
 
       let results = (data as Item[]) || []
 
-      // Client-side radius filter
       if (userId && userLat && userLng && radiusMiles) {
         results = results.filter(item => {
           if (item.user_id === userId) return true
@@ -132,7 +135,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
     return () => { cancelled = true }
   }, [category, offerType, debouncedSearch, userId, userLat, userLng, radiusMiles])
 
-  // Derive available genres from current result set (only for genre-relevant categories)
   const availableGenres = useMemo(() => {
     if (!category || !GENRE_CATEGORIES.has(category)) return []
     const genres = new Set<string>()
@@ -143,7 +145,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
     return Array.from(genres).sort()
   }, [allItems, category])
 
-  // Client-side genre filter (applied on top of DB results)
   const filteredItems = useMemo(() => {
     if (!genre) return allItems
     return allItems.filter(item => item.metadata?.genre === genre)
@@ -151,9 +152,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
 
   const visibleItems = filteredItems.slice(0, visibleCount)
   const hasMore = visibleCount < filteredItems.length
-  const radiusNote = userId && radiusMiles ? `Showing items within ${radiusMiles} miles of you` : null
-
-  // Active filter count for the clear button
   const activeFilterCount = [offerType, genre].filter(Boolean).length
 
   return (
@@ -161,15 +159,14 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
       <div className="container">
         <div className="section">
           <h1 className="section-title">Community Library</h1>
-          <p className="section-subtitle">{radiusNote ?? 'Browse, borrow, and lend with your neighbors'}</p>
+          <p className="section-subtitle">Browse, borrow, and lend with your neighbors</p>
 
-          {/* Search + Add */}
           <div className={styles.searchRow}>
             <div className={styles.searchWrap}>
               <span className={styles.searchIcon}>🔍</span>
               <input
                 className={`input ${styles.searchInput}`}
-                placeholder="Search titles, authors, directors…"
+                placeholder="Search titles, authors, directors..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
@@ -184,7 +181,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
             </div>
           </div>
 
-          {/* Category tabs */}
           <div className="tabs">
             {Object.entries(CAT_LABELS).map(([val, label]) => (
               <button key={val} className={`tab ${category === val ? 'active' : ''}`} onClick={() => setCategory(val)}>
@@ -193,9 +189,7 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
             ))}
           </div>
 
-          {/* Secondary filters row */}
           <div className={styles.filtersRow}>
-            {/* Offer type pills */}
             <div className={styles.filterGroup}>
               {Object.entries(OFFER_LABELS).map(([val, label]) => (
                 <button
@@ -207,8 +201,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
                 </button>
               ))}
             </div>
-
-            {/* Genre pills — only shown when a genre-relevant category is selected and genres exist */}
             {availableGenres.length > 0 && (
               <div className={styles.filterGroup}>
                 <button
@@ -228,13 +220,8 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
                 ))}
               </div>
             )}
-
-            {/* Clear filters */}
             {activeFilterCount > 0 && (
-              <button
-                className={styles.clearFilters}
-                onClick={() => { setOfferType(''); setGenre('') }}
-              >
+              <button className={styles.clearFilters} onClick={() => { setOfferType(''); setGenre('') }}>
                 ✕ Clear filters
               </button>
             )}
@@ -258,13 +245,11 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
                 {activeFilterCount > 0
                   ? 'Try clearing some filters to see more results.'
                   : userId && radiusMiles
-                    ? `No items within ${radiusMiles} miles. Try increasing your radius by clicking the 📍 pill in the nav.`
+                    ? `No items within ${radiusMiles} miles. Try increasing your radius in the nav.`
                     : 'Be the first to add something to your community!'}
               </p>
               {activeFilterCount > 0 ? (
-                <button className="btn btn-outline" onClick={() => { setOfferType(''); setGenre('') }}>
-                  Clear Filters
-                </button>
+                <button className="btn btn-outline" onClick={() => { setOfferType(''); setGenre('') }}>Clear Filters</button>
               ) : (
                 <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>
                   Add the first item
@@ -284,7 +269,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
                   />
                 ))}
               </div>
-
               {hasMore && (
                 <div style={{ textAlign: 'center', marginTop: '2.5rem' }}>
                   <button
@@ -298,8 +282,6 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened }: { ctx:
               )}
             </>
           )}
-
-
         </div>
       </div>
 
@@ -364,6 +346,10 @@ function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalPro
   useScrollLock()
   const supabase = createBrowserClient()
   const [loading, setLoading] = useState(false)
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [pendingPhoto, setPendingPhoto] = useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const photoInputRef = useRef<HTMLInputElement>(null)
   const [form, setForm] = useState({
     title: '', author_creator: '', category: 'Book' as ItemCategory,
     offer_type: 'lend' as OfferType, condition: 'good' as Condition,
@@ -372,31 +358,55 @@ function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalPro
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
 
+  function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) { showToast('Image must be under 5MB', 'error'); return }
+    if (!file.type.startsWith('image/')) { showToast('Please select an image file', 'error'); return }
+    setPendingPhoto(file)
+    setPhotoPreview(URL.createObjectURL(file))
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     try {
-      let metadata = {}
+      let metadata: Record<string, unknown> = {}
       let cover_image_url: string | null = null
-      if (form.category === 'Book' && form.title) {
-        try {
-          const res = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(form.title)}&limit=1`)
-          const data = await res.json()
-          if (data.docs?.[0]) {
-            const doc = data.docs[0]
-            metadata = { year: doc.first_publish_year, genre: doc.subject?.[0], publisher: doc.publisher?.[0] }
-            if (doc.cover_i) cover_image_url = `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
-          }
-        } catch { /* optional */ }
+
+      // Auto-fetch cover art from external APIs (unless user uploaded a photo)
+      if (!pendingPhoto) {
+        if (form.category === 'Book' && form.title) {
+          try {
+            const res = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(form.title)}&limit=1`)
+            const data = await res.json()
+            if (data.docs?.[0]) {
+              const doc = data.docs[0]
+              metadata = { year: doc.first_publish_year, genre: doc.subject?.[0], publisher: doc.publisher?.[0] }
+              if (doc.cover_i) cover_image_url = `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`
+            }
+          } catch { /* optional */ }
+        }
+        if ((form.category === 'DVD' || form.category === 'VHS') && form.title) {
+          try {
+            const res = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(form.title)}&apikey=${process.env.NEXT_PUBLIC_OMDB_API_KEY || 'd5714ece'}`)
+            const data = await res.json()
+            if (data.Poster && data.Poster !== 'N/A') cover_image_url = data.Poster
+            if (data.Year) metadata = { ...metadata, year: parseInt(data.Year), genre: data.Genre?.split(',')[0] }
+          } catch { /* optional */ }
+        }
+        if (form.category === 'Game' && form.title) {
+          try {
+            const igdb = await fetchIGDBCover(form.title)
+            if (igdb.cover_url) cover_image_url = igdb.cover_url
+            if (igdb.year || igdb.genres.length) {
+              metadata = { ...metadata, year: igdb.year ?? undefined, genre: igdb.genres[0] ?? undefined }
+            }
+          } catch { /* optional */ }
+        }
       }
-      if ((form.category === 'DVD' || form.category === 'VHS') && form.title) {
-        try {
-          const res = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(form.title)}&apikey=${process.env.NEXT_PUBLIC_OMDB_API_KEY || 'd5714ece'}`)
-          const data = await res.json()
-          if (data.Poster && data.Poster !== 'N/A') cover_image_url = data.Poster
-          if (data.Year) metadata = { ...metadata, year: parseInt(data.Year), genre: data.Genre?.split(',')[0] }
-        } catch { /* optional */ }
-      }
+
+      // Create the item first to get its ID
       const res = await fetch('/api/items', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -416,13 +426,29 @@ function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalPro
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Could not add item')
+
+      // If user selected a photo, upload it now and update the item
+      if (pendingPhoto && json.ids?.[0]) {
+        setUploadingPhoto(true)
+        const { url, error: uploadError } = await uploadItemPhoto(pendingPhoto, userId, json.ids[0])
+        setUploadingPhoto(false)
+        if (uploadError) {
+          showToast(`Item added but photo upload failed: ${uploadError}`, 'error')
+        } else if (url) {
+          await supabase.from('items').update({ cover_image_url: url }).eq('id', json.ids[0])
+        }
+      }
+
       onSuccess()
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : 'Could not add item', 'error')
     } finally {
       setLoading(false)
+      setUploadingPhoto(false)
     }
   }
+
+  const isSubmitting = loading || uploadingPhoto
 
   return (
     <div className={modalStyles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
@@ -433,13 +459,13 @@ function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalPro
         <form onSubmit={submit}>
           <div className="form-group">
             <label className="label">Title *</label>
-            <input className="input" value={form.title} onChange={set('title')} placeholder="e.g. The Godfather, Beloved by Toni Morrison…" required />
+            <input className="input" value={form.title} onChange={set('title')} placeholder="e.g. The Godfather, Beloved by Toni Morrison..." required />
           </div>
           <div className="form-group">
             <label className="label">Author / Creator</label>
-            <input className="input" value={form.author_creator} onChange={set('author_creator')} placeholder="e.g. Toni Morrison, Stanley Kubrick…" />
+            <input className="input" value={form.author_creator} onChange={set('author_creator')} placeholder="e.g. Toni Morrison, Stanley Kubrick..." />
           </div>
-          <div className={modalStyles.formRow}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
             <div className="form-group">
               <label className="label">Category *</label>
               <select className="input" value={form.category} onChange={set('category')}>
@@ -456,26 +482,56 @@ function AddItemModal({ userId, onClose, onSuccess, showToast }: AddItemModalPro
               </select>
             </div>
           </div>
-          <div className={modalStyles.formRow}>
-            <div className="form-group">
-              <label className="label">Condition</label>
-              <select className="input" value={form.condition} onChange={set('condition')}>
-                <option value="excellent">Excellent</option>
-                <option value="good">Good</option>
-                <option value="fair">Fair</option>
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="label">Max Loan (days)</label>
-              <input className="input" type="number" value={form.duration_days} onChange={set('duration_days')} min={1} max={90} />
-            </div>
+          <div className="form-group">
+            <label className="label">Condition</label>
+            <select className="input" value={form.condition} onChange={set('condition')}>
+              <option value="excellent">Excellent</option>
+              <option value="good">Good</option>
+              <option value="fair">Fair</option>
+            </select>
           </div>
           <div className="form-group">
             <label className="label">Notes</label>
-            <textarea className="input" rows={2} value={form.notes} onChange={set('notes')} placeholder="Any details worth knowing…" />
+            <textarea className="input" rows={2} value={form.notes} onChange={set('notes')} placeholder="Any details worth knowing..." />
           </div>
-          <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
-            {loading ? <span className="spinner" /> : 'Add to Community Shelf'}
+
+          {/* Photo upload */}
+          <div style={{ marginBottom: '1.25rem' }}>
+            <label className="label">Photo (optional)</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              {photoPreview && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={photoPreview} alt="preview" style={{ width: 48, height: 64, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--border)', flexShrink: 0 }} />
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => photoInputRef.current?.click()}
+                >
+                  {photoPreview ? '📷 Change Photo' : '📷 Upload Photo'}
+                </button>
+                <input ref={photoInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handlePhotoSelect} />
+                {photoPreview && (
+                  <button
+                    type="button"
+                    style={{ background: 'none', border: 'none', fontSize: '0.75rem', color: 'var(--muted)', cursor: 'pointer', textAlign: 'left', padding: 0 }}
+                    onClick={() => { setPendingPhoto(null); setPhotoPreview(null) }}
+                  >
+                    Remove
+                  </button>
+                )}
+                {!photoPreview && (
+                  <p style={{ fontSize: '0.75rem', color: 'var(--muted)', margin: 0 }}>
+                    Or we'll find cover art automatically
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={isSubmitting}>
+            {uploadingPhoto ? 'Uploading photo...' : loading ? <span className="spinner" /> : 'Add to Community Shelf'}
           </button>
         </form>
       </div>
@@ -534,7 +590,7 @@ function FlagModal({ item, userId, onClose, onSuccess, showToast }: FlagModalPro
           </div>
           <div className="form-group">
             <label className="label">Notes</label>
-            <textarea className="input" rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any details…" />
+            <textarea className="input" rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any details..." />
           </div>
           <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
             {loading ? <span className="spinner" /> : 'Submit Flag'}
