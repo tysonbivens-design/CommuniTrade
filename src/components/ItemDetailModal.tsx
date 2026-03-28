@@ -17,6 +17,17 @@ const OFFER_LABEL: Record<string, string> = {
   free:   '🎁 Free / Give Away',
 }
 
+// Context-aware CTA label based on offer type
+function getActionLabel(offerType: string): string {
+  switch (offerType) {
+    case 'free':   return 'Claim This Item'
+    case 'swap':   return 'Request a Swap'
+    case 'barter': return 'Propose a Trade'
+    case 'lend':
+    default:       return 'Request to Borrow'
+  }
+}
+
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://communitrade.app'
 
 interface ItemDetailModalProps {
@@ -53,6 +64,7 @@ export default function ItemDetailModal({ item, onClose, onBorrow, onFlag, isOwn
   }
 
   const emoji = { Book: '📚', DVD: '🎬', VHS: '📼', CD: '🎵', Game: '🎲', Tool: '🔧', 'Home Good': '🏠', Other: '📦' }[item.category] || '📦'
+  const actionLabel = getActionLabel(item.offer_type)
 
   return (
     <div className={styles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
@@ -114,7 +126,7 @@ export default function ItemDetailModal({ item, onClose, onBorrow, onFlag, isOwn
                   style={{ flex: 1 }}
                   onClick={() => { onClose(); onBorrow(item) }}
                 >
-                  Request to Borrow
+                  {actionLabel}
                 </button>
               ) : (
                 <button className="btn btn-outline btn-lg" style={{ flex: 1 }} disabled>
@@ -130,9 +142,10 @@ export default function ItemDetailModal({ item, onClose, onBorrow, onFlag, isOwn
               style={{
                 display: 'flex', alignItems: 'center', gap: '0.35rem',
                 padding: '0.6rem 0.9rem', borderRadius: 8, fontSize: '0.85rem',
-                border: '1.5px solid var(--border)', background: copied ? 'var(--sage)' : '#fff',
-                color: copied ? '#fff' : 'var(--bark)', cursor: 'pointer',
-                fontFamily: 'DM Sans, sans-serif', fontWeight: 600,
+                border: '1.5px solid var(--border)',
+                background: copied ? 'var(--sage)' : '#fff',
+                color: copied ? '#fff' : 'var(--bark)',
+                cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', fontWeight: 600,
                 transition: 'all 0.2s', flexShrink: 0,
               }}
             >
