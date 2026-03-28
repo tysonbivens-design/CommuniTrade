@@ -518,7 +518,7 @@ function EditItemModal({ item, userId, onClose, onSave, showToast }: EditItemMod
       if (uploadError) throw uploadError
 
       const { data: { publicUrl } } = supabase.storage.from('item-covers').getPublicUrl(path)
-      const url = 
+      const url = `${publicUrl}?t=${Date.now()}`
       setCoverUrl(url)
       showToast('Photo uploaded! Save to keep it.')
     } catch (err: unknown) {
