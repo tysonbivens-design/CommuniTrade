@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
         const statusBadge = item.status === 'loaned'
           ? '<span style="color:#C4622D;font-weight:600;">On Loan</span>'
           : '<span style="color:#5A7A5C;font-weight:600;">Available</span>'
-        const deepLink = `${APP_URL}?item=${item.id}`
+        const deepLink = `${APP_URL}?page=profile`
         return `
           <tr>
             <td style="padding:0.6rem 0;border-bottom:1px solid #f0ebe3;">
