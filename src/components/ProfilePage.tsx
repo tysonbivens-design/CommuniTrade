@@ -481,9 +481,9 @@ function EditItemModal({ item, userId, onClose, onSave, showToast }: EditItemMod
       // Compress client-side
       const compressed = await new Promise<Blob>((resolve, reject) => {
         const img = new Image()
-        const url = URL.createObjectURL(file)
+        const objectUrl = URL.createObjectURL(file)
         img.onload = () => {
-          URL.revokeObjectURL(url)
+          URL.revokeObjectURL(objectUrl)
           const scale = Math.min(1, 800 / Math.max(img.width, img.height))
           const canvas = document.createElement('canvas')
           canvas.width = Math.round(img.width * scale)
@@ -492,16 +492,18 @@ function EditItemModal({ item, userId, onClose, onSave, showToast }: EditItemMod
           canvas.toBlob(b => b ? resolve(b) : reject(new Error('Compression failed')), 'image/jpeg', 0.8)
         }
         img.onerror = reject
-        img.src = url
+        img.src = objectUrl
       })
 
-      // Moderate via Claude Haiku
+      // Convert to base64
       const b64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve((reader.result as string).split(',')[1])
         reader.onerror = reject
         reader.readAsDataURL(compressed)
       })
+
+      // Moderate via Claude Haiku
       const modRes = await fetch('/api/moderate-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -510,16 +512,16 @@ function EditItemModal({ item, userId, onClose, onSave, showToast }: EditItemMod
       const modData = await modRes.json()
       if (modData.flagged) { showToast('This image was flagged as inappropriate.', 'error'); return }
 
-      // Upload directly using the component supabase instance
-      const path = `${userId}/${item.id}.jpg`
-      const { error: uploadError } = await supabase.storage
-        .from('item-covers')
-        .upload(path, compressed, { upsert: true, contentType: 'image/jpeg' })
-      if (uploadError) throw uploadError
+      // Upload via server-side API route (uses service role key, bypasses RLS)
+      const uploadRes = await fetch('/api/upload-item-photo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64: b64, itemId: item.id, userId }),
+      })
+      const uploadData = await uploadRes.json()
+      if (!uploadRes.ok) throw new Error(uploadData.error || 'Upload failed')
 
-      const { data: { publicUrl } } = supabase.storage.from('item-covers').getPublicUrl(path)
-      const url = `${publicUrl}?t=${Date.now()}`
-      setCoverUrl(url)
+      setCoverUrl(uploadData.url)
       showToast('Photo uploaded! Save to keep it.')
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : 'Upload failed', 'error')
