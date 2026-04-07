@@ -276,8 +276,8 @@ const missingCount = coverItems.filter(c => !c.cover_image_url).length
       .from('feedback')
       .select('id, message, resolved, created_at, profiles(full_name, email)')
       .order('created_at', { ascending: false })
-    if (!error && data) setFeedbackItems(data as FeedbackItem[])
-    setLoadingFeedback(false)
+if (!error && data) setFeedbackItems(data.map((f: any) => ({ ...f, profiles: Array.isArray(f.profiles) ? f.profiles[0] ?? null : f.profiles })) as FeedbackItem[])
+  setLoadingFeedback(false)
   }
 
   async function resolveFeedback(id: string) {
