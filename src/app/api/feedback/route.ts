@@ -9,7 +9,6 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-// 5 feedback submissions per IP per hour
 const FEEDBACK_LIMIT = 5
 const FEEDBACK_WINDOW = 60 * 60 * 1000
 
@@ -26,7 +25,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 })
     }
 
-    // Save to DB
     const { error: insertError } = await supabaseAdmin
       .from('feedback')
       .insert({ user_id: userId, message: message.trim() })
@@ -36,14 +34,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to save feedback.' }, { status: 500 })
     }
 
-    // Get submitter profile
     const { data: submitter } = await supabaseAdmin
       .from('profiles')
       .select('full_name, email')
       .eq('id', userId)
       .single()
 
-    // Get all admin IDs + profiles
     const { data: admins } = await supabaseAdmin
       .from('profiles')
       .select('id, email, full_name')
@@ -51,33 +47,30 @@ export async function POST(req: NextRequest) {
 
     if (admins && admins.length > 0) {
       for (const admin of admins) {
-        // In-app notification
         supabaseAdmin.from('notifications').insert({
           user_id: admin.id,
-          type: 'admin_feedback',
-          title: 'New feedback submitted 💬',
-          body: `${esc(submitter?.full_name) || 'A user'}: "${esc(message.trim().slice(0, 80))}${message.trim().length > 80 ? '…' : ''}"`,
+          type: 'flag' as const,
+          title: 'New feedback submitted',
+          body: `${esc(submitter?.full_name) || 'A user'}: "${esc(message.trim().slice(0, 80))}${message.trim().length > 80 ? '...' : ''}"`,
           data: { page: 'admin' },
         }).then(() => {}).catch(() => {})
 
-        // Push notification
         sendPushToUser(admin.id, {
-          title: 'New feedback 💬',
+          title: 'New feedback',
           body: `${submitter?.full_name || 'A user'} left feedback.`,
           url: `${APP_URL}?page=admin`,
         }).catch(() => {})
 
-        // Email
         if (admin.email) {
           resend.emails.send({
             from: FROM,
             to: admin.email,
-            subject: `💬 New feedback from ${esc(submitter?.full_name) || 'a user'}`,
+            subject: `New feedback from ${esc(submitter?.full_name) || 'a user'}`,
             html: emailTemplate({
-              heading: 'New Feedback 💬',
+              heading: 'New Feedback',
               body: `Hi ${esc(admin.full_name?.split(' ')[0])},<br><br>
 <strong>${esc(submitter?.full_name) || 'A community member'}</strong>${submitter?.email ? ` (${esc(submitter.email)})` : ''} submitted feedback:<br><br>
-<blockquote style="border-left:3px solid var(--rust,#C4622D);margin:0;padding:0.5rem 1rem;color:#5C4033;font-style:italic;">${esc(message.trim())}</blockquote>`,
+<blockquote style="border-left:3px solid #C4622D;margin:0;padding:0.5rem 1rem;color:#5C4033;font-style:italic;">${esc(message.trim())}</blockquote>`,
               ctaText: 'Review in Admin',
               ctaUrl: `${APP_URL}?page=admin`,
             }),
