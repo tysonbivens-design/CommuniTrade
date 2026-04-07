@@ -28,6 +28,14 @@ interface CoverItem {
   cover_image_url: string | null
 }
 
+interface FeedbackItem {
+  id: string
+  message: string
+  resolved: boolean
+  created_at: string
+  profiles: { full_name: string | null; email: string | null } | null
+}
+
 interface AdminPageProps {
   ctx: AppCtx
 }
@@ -49,8 +57,8 @@ const CATEGORY_EMOJI: Record<string, string> = {
 export default function AdminPage({ ctx }: AdminPageProps) {
   const { showToast } = ctx
   const supabase = createBrowserClient()
-  const [tab, setTab] = useState<'items' | 'users' | 'covers'>('items')
-
+const [tab, setTab] = useState<'items' | 'users' | 'covers' | 'feedback'>('items')
+  
   // ── Flagged items state ───────────────────────────────────────────────────
   const [flagged, setFlagged] = useState<FlaggedItem[]>([])
   const [loadingItems, setLoadingItems] = useState(true)
@@ -71,8 +79,13 @@ export default function AdminPage({ ctx }: AdminPageProps) {
   const [loadingCovers, setLoadingCovers] = useState(false)
   const [coversLoaded, setCoversLoaded] = useState(false)
   const [fetchingAll, setFetchingAll] = useState(false)
-  const [fetchProgress, setFetchProgress] = useState<{ done: number; total: number } | null>(null)
+const [fetchProgress, setFetchProgress] = useState<{ done: number; total: number } | null>(null)
 
+  // ── Feedback state ──────────────────────────────────────────────────────
+  const [feedbackItems, setFeedbackItems] = useState<FeedbackItem[]>([])
+  const [loadingFeedback, setLoadingFeedback] = useState(false)
+  const [feedbackLoaded, setFeedbackLoaded] = useState(false)
+  
   useEffect(() => { loadItemPage(0, true) }, [])
 
   useEffect(() => {
@@ -83,6 +96,10 @@ export default function AdminPage({ ctx }: AdminPageProps) {
     if (tab === 'covers' && !coversLoaded) {
       loadCoverItems()
       setCoversLoaded(true)
+    }
+    if (tab === 'feedback' && !feedbackLoaded) {
+      loadFeedback()
+      setFeedbackLoaded(true)
     }
   }, [tab])
 
@@ -249,10 +266,38 @@ export default function AdminPage({ ctx }: AdminPageProps) {
     showToast(`Done! Updated ${updated} of ${missing.length} items ✅`)
   }
 
-  const missingCount = coverItems.filter(c => !c.cover_image_url).length
+const missingCount = coverItems.filter(c => !c.cover_image_url).length
+
+  // ── Feedback ──────────────────────────────────────────────────────────────
+
+  async function loadFeedback() {
+    setLoadingFeedback(true)
+    const { data, error } = await supabase
+      .from('feedback')
+      .select('id, message, resolved, created_at, profiles(full_name, email)')
+      .order('created_at', { ascending: false })
+    if (!error && data) setFeedbackItems(data as FeedbackItem[])
+    setLoadingFeedback(false)
+  }
+
+  async function resolveFeedback(id: string) {
+    const { error } = await supabase.from('feedback').update({ resolved: true }).eq('id', id)
+    if (error) { showToast(error.message, 'error'); return }
+    setFeedbackItems(prev => prev.map(f => f.id === id ? { ...f, resolved: true } : f))
+    showToast('Marked as resolved')
+  }
+
+  async function deleteFeedback(id: string) {
+    const { error } = await supabase.from('feedback').delete().eq('id', id)
+    if (error) { showToast(error.message, 'error'); return }
+    setFeedbackItems(prev => prev.filter(f => f.id !== id))
+    showToast('Feedback deleted')
+  }
+
+  const unresolvedCount = feedbackItems.filter(f => !f.resolved).length
 
   // ── Render ────────────────────────────────────────────────────────────────
-
+  
   return (
     <div style={{ position: 'relative', zIndex: 1 }}>
       <div className="container">
@@ -277,11 +322,19 @@ export default function AdminPage({ ctx }: AdminPageProps) {
                 </span>
               )}
             </button>
-            <button className={`tab ${tab === 'covers' ? 'active' : ''}`} onClick={() => setTab('covers')}>
+           <button className={`tab ${tab === 'covers' ? 'active' : ''}`} onClick={() => setTab('covers')}>
               🖼 Cover Art
               {coversLoaded && missingCount > 0 && (
                 <span style={{ background: 'var(--gold)', color: 'var(--bark)', borderRadius: 10, padding: '0.05rem 0.4rem', fontSize: '0.72rem', marginLeft: '0.3rem' }}>
                   {missingCount}
+                </span>
+              )}
+            </button>
+            <button className={`tab ${tab === 'feedback' ? 'active' : ''}`} onClick={() => setTab('feedback')}>
+              Feedback
+              {feedbackLoaded && unresolvedCount > 0 && (
+                <span style={{ background: 'var(--sage)', color: '#fff', borderRadius: 10, padding: '0.05rem 0.4rem', fontSize: '0.72rem', marginLeft: '0.3rem' }}>
+                  {unresolvedCount}
                 </span>
               )}
             </button>
@@ -483,6 +536,43 @@ export default function AdminPage({ ctx }: AdminPageProps) {
                   ))}
                 </div>
               </>
+            )
+          )}
+
+        {tab === 'feedback' && (
+            loadingFeedback ? <p style={{ color: 'var(--muted)' }}>Loading...</p>
+            : feedbackItems.length === 0 ? (
+              <EmptyState icon="speech_balloon" title="No feedback yet" body="Feedback from community members will appear here." />
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {feedbackItems.map(f => (
+                  <div key={f.id} style={{
+                    background: '#fff',
+                    border: `1.5px solid ${f.resolved ? 'var(--border)' : 'var(--sage)'}`,
+                    borderRadius: 12, padding: '1.25rem',
+                    boxShadow: '0 2px 8px var(--shadow)',
+                    opacity: f.resolved ? 0.6 : 1,
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem', flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>{f.profiles?.full_name || 'Unknown user'}</span>
+                          {f.profiles?.email && <span style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>({f.profiles.email})</span>}
+                          <span style={{ fontSize: '0.75rem', color: 'var(--muted)', marginLeft: 'auto' }}>{new Date(f.created_at).toLocaleDateString()}</span>
+                          {f.resolved && <span style={{ fontSize: '0.72rem', background: 'var(--sage)', color: '#fff', borderRadius: 6, padding: '0.1rem 0.4rem' }}>Resolved</span>}
+                        </div>
+                        <p style={{ fontSize: '0.92rem', color: 'var(--bark)', lineHeight: 1.6, margin: 0 }}>{f.message}</p>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
+                        {!f.resolved && (
+                          <button className="btn btn-outline btn-sm" onClick={() => resolveFeedback(f.id)}>Resolve</button>
+                        )}
+                        <button className="btn btn-sm" style={{ background: 'var(--cream)', color: 'var(--muted)', border: '1px solid var(--border)' }} onClick={() => deleteFeedback(f.id)}>Delete</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )
           )}
 
