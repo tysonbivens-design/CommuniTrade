@@ -28,14 +28,6 @@ interface CoverItem {
   cover_image_url: string | null
 }
 
-interface FeedbackItem {
-  id: string
-  message: string
-  resolved: boolean
-  created_at: string
-  profiles: { full_name: string | null; email: string | null } | null
-}
-
 interface AdminPageProps {
   ctx: AppCtx
 }
@@ -57,7 +49,7 @@ const CATEGORY_EMOJI: Record<string, string> = {
 export default function AdminPage({ ctx }: AdminPageProps) {
   const { showToast } = ctx
   const supabase = createBrowserClient()
-  const [tab, setTab] = useState<'items' | 'users' | 'covers' | 'feedback'>('items')
+  const [tab, setTab] = useState<'items' | 'users' | 'covers'>('items')
 
   // ── Flagged items state ───────────────────────────────────────────────────
   const [flagged, setFlagged] = useState<FlaggedItem[]>([])
@@ -81,11 +73,6 @@ export default function AdminPage({ ctx }: AdminPageProps) {
   const [fetchingAll, setFetchingAll] = useState(false)
   const [fetchProgress, setFetchProgress] = useState<{ done: number; total: number } | null>(null)
 
-  // ── Feedback state ────────────────────────────────────────────────────────
-  const [feedbackItems, setFeedbackItems] = useState<FeedbackItem[]>([])
-  const [loadingFeedback, setLoadingFeedback] = useState(false)
-  const [feedbackLoaded, setFeedbackLoaded] = useState(false)
-
   useEffect(() => { loadItemPage(0, true) }, [])
 
   useEffect(() => {
@@ -96,10 +83,6 @@ export default function AdminPage({ ctx }: AdminPageProps) {
     if (tab === 'covers' && !coversLoaded) {
       loadCoverItems()
       setCoversLoaded(true)
-    }
-    if (tab === 'feedback' && !feedbackLoaded) {
-      loadFeedback()
-      setFeedbackLoaded(true)
     }
   }, [tab])
 
@@ -160,6 +143,7 @@ export default function AdminPage({ ctx }: AdminPageProps) {
           if (a.suspended !== b.suspended) return a.suspended ? -1 : 1
           return b.flag_count - a.flag_count
         }) as FlaggedUser[]
+
       setFlaggedUsers(prev => initial ? withFlags : [...prev, ...withFlags])
       setHasMoreUsers(data.length === PAGE_SIZE)
       setUserOffset(fromOffset + data.length)
@@ -168,46 +152,48 @@ export default function AdminPage({ ctx }: AdminPageProps) {
     else setLoadingMoreUsers(false)
   }
 
-  async function suspendUser(userId: string, name: string) {
-    if (!window.confirm(`Suspend ${name}? They will be locked out of all actions.`)) return
+  async function unsuspendUser(userId: string, userName: string) {
+    const { error } = await supabase.from('profiles').update({ suspended: false }).eq('id', userId)
+    if (error) { showToast(error.message, 'error'); return }
+    await supabase.from('user_flags').update({ resolved: true }).eq('reported_user_id', userId)
+    setFlaggedUsers(prev => prev.map(u => u.id === userId ? { ...u, suspended: false } : u))
+    showToast(`${userName} has been unsuspended ✅`)
+  }
+
+  async function suspendUser(userId: string, userName: string) {
+    if (!window.confirm(`Manually suspend ${userName}? They will be unable to transact on the platform.`)) return
     const { error } = await supabase.from('profiles').update({ suspended: true }).eq('id', userId)
     if (error) { showToast(error.message, 'error'); return }
     setFlaggedUsers(prev => prev.map(u => u.id === userId ? { ...u, suspended: true } : u))
-    showToast(`${name} suspended`)
-  }
-
-  async function unsuspendUser(userId: string, name: string) {
-    const { error } = await supabase.from('profiles').update({ suspended: false }).eq('id', userId)
-    if (error) { showToast(error.message, 'error'); return }
-    setFlaggedUsers(prev => prev.map(u => u.id === userId ? { ...u, suspended: false } : u))
-    showToast(`${name} unsuspended`)
+    showToast(`${userName} has been suspended`)
   }
 
   async function dismissUserFlags(userId: string) {
-    await supabase.from('user_flags').update({ resolved: true }).eq('reported_user_id', userId)
+    const { error } = await supabase.from('user_flags').update({ resolved: true }).eq('reported_user_id', userId)
+    if (error) { showToast(error.message, 'error'); return }
     setFlaggedUsers(prev => prev.filter(u => u.id !== userId))
-    showToast('Flags dismissed')
+    showToast('Reports dismissed')
   }
 
   // ── Cover backfill ────────────────────────────────────────────────────────
 
   async function loadCoverItems() {
     setLoadingCovers(true)
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('items')
       .select('id, title, category, cover_image_url')
       .in('category', ['Book', 'DVD', 'VHS', 'Game'])
       .eq('archived', false)
-      .order('title', { ascending: true })
-
-    if (!error && data) setCoverItems(data as CoverItem[])
+      .order('category')
+      .order('title')
+    setCoverItems((data as CoverItem[]) || [])
     setLoadingCovers(false)
   }
 
   async function fetchCoverUrl(item: CoverItem): Promise<string | null> {
     try {
       if (item.category === 'Book') {
-        const res = await fetch(`https://openlibrary.org/search.json?title=${encodeURIComponent(item.title)}&limit=1`)
+        const res = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(item.title)}&limit=1`)
         const data = await res.json()
         if (data.docs?.[0]?.cover_i) {
           return `https://covers.openlibrary.org/b/id/${data.docs[0].cover_i}-M.jpg`
@@ -265,35 +251,6 @@ export default function AdminPage({ ctx }: AdminPageProps) {
 
   const missingCount = coverItems.filter(c => !c.cover_image_url).length
 
-  // ── Feedback ──────────────────────────────────────────────────────────────
-
-  async function loadFeedback() {
-    setLoadingFeedback(true)
-    const { data, error } = await supabase
-      .from('feedback')
-      .select('id, message, resolved, created_at, profiles(full_name, email)')
-      .order('created_at', { ascending: false })
-
-    if (!error && data) setFeedbackItems(data as FeedbackItem[])
-    setLoadingFeedback(false)
-  }
-
-  async function resolveFeedback(id: string) {
-    const { error } = await supabase.from('feedback').update({ resolved: true }).eq('id', id)
-    if (error) { showToast(error.message, 'error'); return }
-    setFeedbackItems(prev => prev.map(f => f.id === id ? { ...f, resolved: true } : f))
-    showToast('Marked as resolved')
-  }
-
-  async function deleteFeedback(id: string) {
-    const { error } = await supabase.from('feedback').delete().eq('id', id)
-    if (error) { showToast(error.message, 'error'); return }
-    setFeedbackItems(prev => prev.filter(f => f.id !== id))
-    showToast('Feedback deleted')
-  }
-
-  const unresolvedCount = feedbackItems.filter(f => !f.resolved).length
-
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -301,7 +258,7 @@ export default function AdminPage({ ctx }: AdminPageProps) {
       <div className="container">
         <div className="section">
           <h1 className="section-title">Admin Dashboard</h1>
-          <p className="section-subtitle">Review flagged listings, reported users, manage cover art, and read feedback</p>
+          <p className="section-subtitle">Review flagged listings, reported users, and manage cover art</p>
 
           <div className="tabs" style={{ marginBottom: '1.5rem' }}>
             <button className={`tab ${tab === 'items' ? 'active' : ''}`} onClick={() => setTab('items')}>
@@ -325,14 +282,6 @@ export default function AdminPage({ ctx }: AdminPageProps) {
               {coversLoaded && missingCount > 0 && (
                 <span style={{ background: 'var(--gold)', color: 'var(--bark)', borderRadius: 10, padding: '0.05rem 0.4rem', fontSize: '0.72rem', marginLeft: '0.3rem' }}>
                   {missingCount}
-                </span>
-              )}
-            </button>
-            <button className={`tab ${tab === 'feedback' ? 'active' : ''}`} onClick={() => setTab('feedback')}>
-              💬 Feedback
-              {feedbackLoaded && unresolvedCount > 0 && (
-                <span style={{ background: 'var(--sage)', color: '#fff', borderRadius: 10, padding: '0.05rem 0.4rem', fontSize: '0.72rem', marginLeft: '0.3rem' }}>
-                  {unresolvedCount}
                 </span>
               )}
             </button>
@@ -405,25 +354,32 @@ export default function AdminPage({ ctx }: AdminPageProps) {
                   {flaggedUsers.map(u => (
                     <div key={u.id} style={{
                       background: '#fff',
-                      border: `2px solid ${u.suspended ? '#FEECEC' : 'var(--border)'}`,
-                      borderRadius: 12, padding: '1.25rem', boxShadow: '0 2px 8px var(--shadow)',
+                      border: `2px solid ${u.suspended ? '#C62828' : '#FFF3E0'}`,
+                      borderRadius: 12, padding: '1.25rem',
+                      boxShadow: '0 2px 8px var(--shadow)',
                     }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                            <h3 style={{ fontFamily: 'Fraunces, serif' }}>{u.full_name || 'Unknown'}</h3>
-                            {u.suspended && (
-                              <span style={{ background: '#C62828', color: '#fff', fontSize: '0.7rem', padding: '0.1rem 0.45rem', borderRadius: 6, fontWeight: 600 }}>
-                                SUSPENDED
-                              </span>
-                            )}
+                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                          <span className="avatar"
+                            style={{ background: u.avatar_color || '#C4622D', width: 40, height: 40, fontSize: '1rem', flexShrink: 0 }}>
+                            {u.full_name?.[0] || '?'}
+                          </span>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                              <h3 style={{ fontFamily: 'Fraunces, serif', fontSize: '1.05rem' }}>{u.full_name}</h3>
+                              {u.suspended && (
+                                <span style={{ background: '#C62828', color: '#fff', borderRadius: 6, padding: '0.1rem 0.5rem', fontSize: '0.72rem', fontWeight: 600 }}>
+                                  SUSPENDED
+                                </span>
+                              )}
+                            </div>
+                            <p style={{ fontSize: '0.82rem', color: 'var(--muted)', marginTop: '0.1rem' }}>
+                              {u.email} · Trust ⭐{u.trust_score?.toFixed(1)}
+                            </p>
+                            <p style={{ fontSize: '0.82rem', color: '#C62828', marginTop: '0.4rem' }}>
+                              🚨 {u.flag_count} report{u.flag_count !== 1 ? 's' : ''}: {u.user_flags?.map((f: any) => f.reason).join(', ')}
+                            </p>
                           </div>
-                          <p style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
-                            {u.email} · Trust score: {u.trust_score?.toFixed(1) ?? 'N/A'}
-                          </p>
-                          <p style={{ fontSize: '0.82rem', color: '#C62828', marginTop: '0.5rem' }}>
-                            🚨 {u.flag_count} report{u.flag_count !== 1 ? 's' : ''}: {u.user_flags?.map((f: any) => f.reason).join(', ')}
-                          </p>
                         </div>
                         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', flexShrink: 0 }}>
                           {u.suspended ? (
@@ -491,6 +447,7 @@ export default function AdminPage({ ctx }: AdminPageProps) {
                       background: '#fff', borderRadius: 10, padding: '0.75rem 1rem',
                       border: '1px solid var(--border)', boxShadow: '0 1px 4px var(--shadow)',
                     }}>
+                      {/* Thumbnail */}
                       <div style={{
                         width: 36, height: 50, borderRadius: 3, overflow: 'hidden', flexShrink: 0,
                         background: 'var(--cream)', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -502,6 +459,7 @@ export default function AdminPage({ ctx }: AdminPageProps) {
                           : <span style={{ fontSize: '1rem' }}>{CATEGORY_EMOJI[item.category] || '📦'}</span>
                         }
                       </div>
+
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 600, fontSize: '0.88rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {item.title}
@@ -512,6 +470,7 @@ export default function AdminPage({ ctx }: AdminPageProps) {
                             : <span>⬜ Missing</span>}
                         </div>
                       </div>
+
                       <button
                         className="btn btn-outline btn-sm"
                         onClick={() => fetchSingleCover(item)}
@@ -524,64 +483,6 @@ export default function AdminPage({ ctx }: AdminPageProps) {
                   ))}
                 </div>
               </>
-            )
-          )}
-
-          {/* ── FEEDBACK ── */}
-          {tab === 'feedback' && (
-            loadingFeedback ? <p style={{ color: 'var(--muted)' }}>Loading…</p>
-            : feedbackItems.length === 0 ? (
-              <EmptyState icon="💬" title="No feedback yet" body="Feedback from community members will appear here." />
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {feedbackItems.map(f => (
-                  <div key={f.id} style={{
-                    background: '#fff',
-                    border: `1.5px solid ${f.resolved ? 'var(--border)' : 'var(--sage)'}`,
-                    borderRadius: 12, padding: '1.25rem',
-                    boxShadow: '0 2px 8px var(--shadow)',
-                    opacity: f.resolved ? 0.6 : 1,
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem', flexWrap: 'wrap' }}>
-                          <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>
-                            {f.profiles?.full_name || 'Unknown user'}
-                          </span>
-                          {f.profiles?.email && (
-                            <span style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>({f.profiles.email})</span>
-                          )}
-                          <span style={{ fontSize: '0.75rem', color: 'var(--muted)', marginLeft: 'auto' }}>
-                            {new Date(f.created_at).toLocaleDateString()}
-                          </span>
-                          {f.resolved && (
-                            <span style={{ fontSize: '0.72rem', background: 'var(--sage)', color: '#fff', borderRadius: 6, padding: '0.1rem 0.4rem' }}>
-                              Resolved
-                            </span>
-                          )}
-                        </div>
-                        <p style={{ fontSize: '0.92rem', color: 'var(--bark)', lineHeight: 1.6, margin: 0 }}>
-                          {f.message}
-                        </p>
-                      </div>
-                      <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
-                        {!f.resolved && (
-                          <button className="btn btn-outline btn-sm" onClick={() => resolveFeedback(f.id)}>
-                            ✅ Resolve
-                          </button>
-                        )}
-                        <button
-                          className="btn btn-sm"
-                          style={{ background: 'var(--cream)', color: 'var(--muted)', border: '1px solid var(--border)' }}
-                          onClick={() => deleteFeedback(f.id)}
-                        >
-                          🗑
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
             )
           )}
 
