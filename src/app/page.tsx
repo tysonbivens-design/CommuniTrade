@@ -21,6 +21,7 @@ import OnboardingTour, { shouldShowTour } from '@/components/OnboardingTour'
 import InstallPrompt from '@/components/InstallPrompt'
 import PushPrompt from '@/components/PushPrompt'
 import type { Profile } from '@/types'
+import FeedbackButton from '@/components/FeedbackButton'
 
 import type { Page } from '@/types'
 export type { Page }
@@ -217,6 +218,7 @@ export default function App() {
       {page === 'support'       && <SupportPage ctx={ctx} />}
 
       {page !== 'support' && <FloatingSupport onNavigate={navigate} />}
+      {page !== 'support' && <FeedbackButton ctx={ctx} />}
 
       {showAuth && (
         <AuthModal
