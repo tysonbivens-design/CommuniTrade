@@ -9,7 +9,7 @@ import type { Loan, LoanRequest, AppCtx } from '@/types'
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function LoansPage({ ctx }: { ctx: AppCtx }) {
-  const { user, showToast } = ctx
+  const { user, showToast, navigate } = ctx
   const supabase = createBrowserClient()
 
   const [tab, setTab] = useState<'requests' | 'lent' | 'borrowed'>('requests')
@@ -57,12 +57,9 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
         return
       }
 
-      // Filter requests to only those for items this user owns
-      const myRequests = (reqResult.data as LoanRequest[]).filter(r => r.items?.user_id === userId)
-
-      setRequests(myRequests)
-      setLent(lentResult.data as Loan[])
-      setBorrowed(borrowedResult.data as Loan[])
+      setRequests((reqResult.data || []) as LoanRequest[])
+      setLent((lentResult.data || []) as Loan[])
+      setBorrowed((borrowedResult.data || []) as Loan[])
       setLoading(false)
     }
 
@@ -75,21 +72,27 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
     const dueAt = new Date()
     dueAt.setDate(dueAt.getDate() + req.duration_days)
 
-    const { error } = await supabase.from('loans').insert({
-      item_id: req.item_id, lender_id: userId, borrower_id: req.requester_id,
-      request_id: req.id, duration_days: req.duration_days,
-      due_at: dueAt.toISOString(), status: 'active',
+    const { error: loanErr } = await supabase.from('loans').insert({
+      item_id: req.item_id,
+      lender_id: userId,
+      borrower_id: req.requester_id,
+      request_id: req.id,
+      duration_days: req.duration_days,
+      due_at: dueAt.toISOString(),
+      status: 'active',
     })
-    if (error) { showToast(error.message, 'error'); return }
+    if (loanErr) { showToast(loanErr.message, 'error'); return }
 
-    await Promise.all([
-      supabase.from('loan_requests').update({ status: 'approved' }).eq('id', req.id),
-      supabase.from('items').update({ status: 'loaned' }).eq('id', req.item_id),
-      supabase.from('notifications').insert({
-        user_id: req.requester_id, type: 'loan_approved',
-        title: 'Borrow Request Approved! ✅',
+    await supabase.from('loan_requests').update({ status: 'approved' }).eq('id', req.id)
+    await supabase.from('items').update({ status: 'loaned' }).eq('id', req.item_id)
+
+    await supabase.from('notifications').insert([
+      {
+        user_id: req.requester_id,
+        type: 'loan_approved',
+        title: 'Request Approved!',
         body: `Your request to borrow "${req.items.title}" was approved. Due back in ${req.duration_days} days.`,
-      }),
+      },
     ])
 
     fetch('/api/notify', {
@@ -103,10 +106,9 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
       }),
     }).catch(() => {})
 
-    showToast('Request approved! ✅')
+    showToast('Request approved!')
     setRequests(r => r.filter(x => x.id !== req.id))
 
-    // Reload lent list so new loan appears immediately
     const { data } = await supabase
       .from('loans')
       .select('*, items(id, title, category), borrower:profiles!loans_borrower_id_fkey(full_name, avatar_color, avatar_url)')
@@ -137,7 +139,7 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
       .eq('id', loan.item_id)
     if (itemErr) { showToast(itemErr.message, 'error'); return }
 
-    showToast('Return confirmed! Item is available again ✅')
+    showToast('Return confirmed! Item is available again')
     setReviewLoan(loan)
     setLent(l => l.filter(x => x.id !== loan.id))
   }
@@ -151,16 +153,14 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
       .eq('id', loan.id)
     if (error) { showToast(error.message, 'error'); return }
 
-    // In-app notification for lender
     await supabase.from('notifications').insert({
       user_id: loan.lender_id,
       type: 'loan_request',
-      title: 'Item marked as returned 📦',
-      body: `The borrower says they've returned "${loan.items?.title}". Please confirm when you have it back.`,
+      title: 'Item marked as returned',
+      body: `The borrower says they have returned "${loan.items?.title}". Please confirm when you have it back.`,
       data: { loan_id: loan.id },
     })
 
-    // Email the lender (fire-and-forget)
     fetch('/api/notify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -172,7 +172,7 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
       }),
     }).catch(() => {})
 
-    showToast("Marked as returned — your lender will confirm when they have it back")
+    showToast('Marked as returned — your lender will confirm when they have it back')
     setBorrowed(l => l.map(x => x.id === loan.id ? { ...x, borrower_confirmed_return: true } : x))
   }
 
@@ -187,7 +187,7 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
         dueDate: new Date(loan.due_at).toLocaleDateString(),
       }),
     }).catch(() => {})
-    showToast('📨 Reminder email sent!')
+    showToast('Reminder email sent!')
   }
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -208,7 +208,7 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
       <div className="container">
         <div className="section">
           <h1 className="section-title">My Loans</h1>
-          <p className="section-subtitle">Track everything you've lent and borrowed</p>
+          <p className="section-subtitle">Track everything you have lent and borrowed</p>
 
           <div className="tabs">
             <button className={`tab ${tab === 'requests' ? 'active' : ''}`} onClick={() => setTab('requests')}>
@@ -228,7 +228,7 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
           </div>
 
           {loading ? (
-            <p style={{ color: 'var(--muted)' }}>Loading…</p>
+            <p style={{ color: 'var(--muted)' }}>Loading...</p>
           ) : error ? (
             <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}>⚠️ {error}</div>
           ) : (
@@ -258,7 +258,7 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
                           </div>
                         </div>
                         <div className={styles.requestActions}>
-                          <button className="btn btn-primary btn-sm" onClick={() => approveRequest(req)}>Approve ✅</button>
+                          <button className="btn btn-primary btn-sm" onClick={() => approveRequest(req)}>Approve</button>
                           <button className="btn btn-outline btn-sm" onClick={() => declineRequest(req)}>Decline</button>
                         </div>
                       </div>
@@ -277,6 +277,7 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
                     onConfirmReturn={lenderConfirmReturn}
                     onMarkReturned={borrowerMarkReturned}
                     onSendReminder={sendReminder}
+                    onMessage={() => navigate('messages')}
                     isOverdue={isOverdue}
                     formatDate={formatDate}
                   />
@@ -292,7 +293,7 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
           loan={reviewLoan}
           userId={userId}
           onClose={() => setReviewLoan(null)}
-          onSuccess={() => { setReviewLoan(null); showToast('Review submitted! ⭐') }}
+          onSuccess={() => { setReviewLoan(null); showToast('Review submitted!') }}
           showToast={showToast}
         />
       )}
@@ -301,7 +302,6 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
 }
 
 // ─── Responsive Loan List ─────────────────────────────────────────────────────
-// Table on desktop, stacked cards on mobile
 
 interface LoanListProps {
   loans: Loan[]
@@ -309,14 +309,15 @@ interface LoanListProps {
   onConfirmReturn: (loan: Loan) => void
   onMarkReturned: (loan: Loan) => void
   onSendReminder: (loan: Loan) => void
+  onMessage: (loan: Loan) => void
   isOverdue: (dueAt: string) => boolean
   formatDate: (d: string) => string
 }
 
-function LoanList({ loans, tab, onConfirmReturn, onMarkReturned, onSendReminder, isOverdue, formatDate }: LoanListProps) {
+function LoanList({ loans, tab, onConfirmReturn, onMarkReturned, onSendReminder, onMessage, isOverdue, formatDate }: LoanListProps) {
   return (
     <>
-      {/* ── Desktop table ── */}
+      {/* Desktop table */}
       <div className={styles.tableWrap}>
         <table className={styles.table}>
           <thead>
@@ -344,11 +345,11 @@ function LoanList({ loans, tab, onConfirmReturn, onMarkReturned, onSendReminder,
                   <td>{formatDate(loan.due_at)}</td>
                   <td>
                     <span className={`badge ${overdue ? 'badge-overdue' : 'badge-loaned'}`}>
-                      {overdue ? '⚠ Overdue' : 'Active'}
+                      {overdue ? 'Overdue' : 'Active'}
                     </span>
                   </td>
                   <td>
-                    <LoanAction loan={loan} tab={tab} overdue={overdue} onConfirmReturn={onConfirmReturn} onMarkReturned={onMarkReturned} onSendReminder={onSendReminder} />
+                    <LoanAction loan={loan} tab={tab} overdue={overdue} onConfirmReturn={onConfirmReturn} onMarkReturned={onMarkReturned} onSendReminder={onSendReminder} onMessage={onMessage} />
                   </td>
                 </tr>
               )
@@ -357,7 +358,7 @@ function LoanList({ loans, tab, onConfirmReturn, onMarkReturned, onSendReminder,
         </table>
       </div>
 
-      {/* ── Mobile cards ── */}
+      {/* Mobile cards */}
       <div className={styles.loanCards}>
         {loans.map(loan => {
           const overdue = isOverdue(loan.due_at)
@@ -367,7 +368,7 @@ function LoanList({ loans, tab, onConfirmReturn, onMarkReturned, onSendReminder,
               <div className={styles.loanCardTop}>
                 <strong style={{ fontSize: '0.95rem' }}>{loan.items?.title}</strong>
                 <span className={`badge ${overdue ? 'badge-overdue' : 'badge-loaned'}`}>
-                  {overdue ? '⚠ Overdue' : 'Active'}
+                  {overdue ? 'Overdue' : 'Active'}
                 </span>
               </div>
               <div className={styles.loanCardMeta}>
@@ -382,7 +383,7 @@ function LoanList({ loans, tab, onConfirmReturn, onMarkReturned, onSendReminder,
                 </span>
               </div>
               <div style={{ marginTop: '0.75rem' }}>
-                <LoanAction loan={loan} tab={tab} overdue={overdue} onConfirmReturn={onConfirmReturn} onMarkReturned={onMarkReturned} onSendReminder={onSendReminder} />
+                <LoanAction loan={loan} tab={tab} overdue={overdue} onConfirmReturn={onConfirmReturn} onMarkReturned={onMarkReturned} onSendReminder={onSendReminder} onMessage={onMessage} />
               </div>
             </div>
           )
@@ -399,14 +400,19 @@ interface LoanActionProps {
   onConfirmReturn: (loan: Loan) => void
   onMarkReturned: (loan: Loan) => void
   onSendReminder: (loan: Loan) => void
+  onMessage: (loan: Loan) => void
 }
 
-function LoanAction({ loan, tab, overdue, onConfirmReturn, onMarkReturned, onSendReminder }: LoanActionProps) {
-  if (tab === 'lent' && overdue) return <button className="btn btn-primary btn-sm" onClick={() => onSendReminder(loan)}>Send Reminder</button>
-  if (tab === 'lent' && !overdue) return <button className="btn btn-outline btn-sm" onClick={() => onConfirmReturn(loan)}>Confirm Return</button>
-  if (tab === 'borrowed' && !loan.borrower_confirmed_return) return <button className="btn btn-outline btn-sm" onClick={() => onMarkReturned(loan)}>I've Returned It</button>
-  if (tab === 'borrowed' && loan.borrower_confirmed_return) return <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Waiting for lender ⏳</span>
-  return null
+function LoanAction({ loan, tab, overdue, onConfirmReturn, onMarkReturned, onSendReminder, onMessage }: LoanActionProps) {
+  return (
+    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+      {tab === 'lent' && overdue && <button className="btn btn-primary btn-sm" onClick={() => onSendReminder(loan)}>Send Reminder</button>}
+      {tab === 'lent' && !overdue && <button className="btn btn-outline btn-sm" onClick={() => onConfirmReturn(loan)}>Confirm Return</button>}
+      {tab === 'borrowed' && !loan.borrower_confirmed_return && <button className="btn btn-outline btn-sm" onClick={() => onMarkReturned(loan)}>I've Returned It</button>}
+      {tab === 'borrowed' && loan.borrower_confirmed_return && <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Waiting for lender</span>}
+      <button className="btn btn-outline btn-sm" onClick={() => onMessage(loan)}>Message</button>
+    </div>
+  )
 }
 
 function EmptyState({ icon, text }: { icon: string; text: string }) {
@@ -452,8 +458,8 @@ function ReviewModal({ loan, userId, onClose, onSuccess, showToast }: ReviewModa
   return (
     <div className={modalStyles.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
       <div className={modalStyles.modal}>
-        <button className={modalStyles.close} onClick={onClose}>✕</button>
-        <h2 className={modalStyles.title}>Leave a Review ⭐</h2>
+        <button className={modalStyles.close} onClick={onClose}>x</button>
+        <h2 className={modalStyles.title}>Leave a Review</h2>
         <p className={modalStyles.subtitle}>Help the community know who to trust</p>
         <form onSubmit={submit}>
           <div className="form-group">
