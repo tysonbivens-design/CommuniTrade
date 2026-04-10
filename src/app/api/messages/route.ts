@@ -19,9 +19,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { senderId, recipientId, body, contextType, contextId } = await req.json()
+    const { senderId, recipientId, msgBody, contextType, contextId } = await req.json()
 
-    if (!senderId || !recipientId || !body?.trim() || !contextType) {
+    if (!senderId || !recipientId || !msgBody?.trim() || !contextType) {
       return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 })
     }
 
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
           participant_b: participantB,
           context_type: contextType,
           context_id: contextId ?? null,
-          last_message: body.trim(),
+          last_message: msgBody.trim(),
           last_message_at: new Date().toISOString(),
         })
         .select('id')
@@ -59,15 +59,15 @@ export async function POST(req: NextRequest) {
     } else {
       await supabaseAdmin
         .from('conversations')
-        .update({ last_message: body.trim(), last_message_at: new Date().toISOString() })
+        .update({ last_message: msgBody.trim(), last_message_at: new Date().toISOString() })
         .eq('id', conv.id)
     }
 
     // Insert message
     const { data: message, error: msgErr } = await supabaseAdmin
       .from('messages')
-      .insert({ conversation_id: conv.id, sender_id: senderId, body: body.trim() })
-      .select('id, body, created_at')
+      .insert({ conversation_id: conv.id, sender_id: senderId, msgBody: msgBody.trim() })
+      .select('id, msgBody, created_at')
       .single()
 
     if (msgErr || !message) {
@@ -85,14 +85,14 @@ export async function POST(req: NextRequest) {
   user_id: recipientId,
   type: 'loan_request',
   title: `New message from ${sender?.full_name || 'a neighbor'}`,
-  body: body.trim().slice(0, 100),
+  msgBody: msgBody.trim().slice(0, 100),
   data: { page: 'messages', conversation_id: conv.id },
 }).then(() => {}).catch(() => {})
 
     // Push notification
     sendPushToUser(recipientId, {
       title: `${sender?.full_name || 'A neighbor'} sent you a message`,
-      body: body.trim().slice(0, 100),
+      msgBody: msgBody.trim().slice(0, 100),
       url: `${APP_URL}?page=messages`,
     }).catch(() => {})
 
@@ -114,7 +114,7 @@ export async function GET(req: NextRequest) {
     // Fetch messages for a conversation
     const { data, error } = await supabaseAdmin
       .from('messages')
-      .select('id, body, sender_id, read, created_at')
+      .select('id, msgBody, sender_id, read, created_at')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true })
 
