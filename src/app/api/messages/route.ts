@@ -81,13 +81,13 @@ export async function POST(req: NextRequest) {
       .eq('id', senderId)
       .single()
 
-    await supabaseAdmin.from('notifications').insert({
-      user_id: recipientId,
-      type: 'loan_request',
-      title: `New message from ${sender?.full_name || 'a neighbor'}`,
-      body: body.trim().slice(0, 100),
-      data: { page: 'messages', conversation_id: conv.id },
-    }).catch(() => {})
+    supabaseAdmin.from('notifications').insert({
+  user_id: recipientId,
+  type: 'loan_request',
+  title: `New message from ${sender?.full_name || 'a neighbor'}`,
+  body: body.trim().slice(0, 100),
+  data: { page: 'messages', conversation_id: conv.id },
+}).then(() => {}).catch(() => {})
 
     // Push notification
     sendPushToUser(recipientId, {
