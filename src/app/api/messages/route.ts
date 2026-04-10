@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { senderId, recipientId, msgBody, contextType, contextId } = await req.json()
+    const { senderId, recipientId, body: msgBody, contextType, contextId } = await req.json()
 
     if (!senderId || !recipientId || !msgBody?.trim() || !contextType) {
       return NextResponse.json({ error: 'Missing required fields.' }, { status: 400 })
@@ -66,33 +66,34 @@ export async function POST(req: NextRequest) {
     // Insert message
     const { data: message, error: msgErr } = await supabaseAdmin
       .from('messages')
-      .insert({ conversation_id: conv.id, sender_id: senderId, msgBody: msgBody.trim() })
-      .select('id, msgBody, created_at')
+      .insert({ conversation_id: conv.id, sender_id: senderId, body: msgBody.trim() })
+      .select('id, body, created_at')
       .single()
 
     if (msgErr || !message) {
       return NextResponse.json({ error: 'Could not send message.' }, { status: 500 })
     }
 
-    // In-app notification for recipient
+    // Get sender profile for notification
     const { data: sender } = await supabaseAdmin
       .from('profiles')
       .select('full_name')
       .eq('id', senderId)
       .single()
 
-    supabaseAdmin.from('notifications').insert({
-  user_id: recipientId,
-  type: 'loan_request',
-  title: `New message from ${sender?.full_name || 'a neighbor'}`,
-  msgBody: msgBody.trim().slice(0, 100),
-  data: { page: 'messages', conversation_id: conv.id },
-}).then(() => {}).catch(() => {})
+    // In-app notification for recipient (fire and forget)
+    void supabaseAdmin.from('notifications').insert({
+      user_id: recipientId,
+      type: 'loan_request',
+      title: `New message from ${sender?.full_name || 'a neighbor'}`,
+      body: msgBody.trim().slice(0, 100),
+      data: { page: 'messages', conversation_id: conv.id },
+    })
 
     // Push notification
     sendPushToUser(recipientId, {
       title: `${sender?.full_name || 'A neighbor'} sent you a message`,
-      msgBody: msgBody.trim().slice(0, 100),
+      body: msgBody.trim().slice(0, 100),
       url: `${APP_URL}?page=messages`,
     }).catch(() => {})
 
@@ -111,17 +112,15 @@ export async function GET(req: NextRequest) {
   if (!userId) return NextResponse.json({ error: 'Missing userId.' }, { status: 400 })
 
   if (conversationId) {
-    // Fetch messages for a conversation
     const { data, error } = await supabaseAdmin
       .from('messages')
-      .select('id, msgBody, sender_id, read, created_at')
+      .select('id, body, sender_id, read, created_at')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true })
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    // Mark messages as read for this user
-    await supabaseAdmin
+    void supabaseAdmin
       .from('messages')
       .update({ read: true })
       .eq('conversation_id', conversationId)
@@ -139,7 +138,6 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Count unread messages per conversation
   const { data: unread } = await supabaseAdmin
     .from('messages')
     .select('conversation_id')
