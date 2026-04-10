@@ -118,6 +118,7 @@ export default function Nav({ page, setPage, user, profile, notifCount, onSignIn
         { page: 'library',       icon: '📚', label: 'Library' },
         { page: 'barter',        icon: '🤝', label: 'Barter' },
         { page: 'loans',         icon: '📦', label: 'Loans' },
+        { page: 'messages',      icon: '💬', label: 'Messages' },
         { page: 'notifications', icon: '🔔', label: 'Alerts' },
       ]
     : [
@@ -143,6 +144,7 @@ export default function Nav({ page, setPage, user, profile, notifCount, onSignIn
           ))}
           {user && (
             <>
+              <button className={`${styles.link} ${page === 'messages' ? styles.active : ''}`} onClick={() => navigate('messages')}>Messages</button>
               <button className={`${styles.link} ${page === 'loans' ? styles.active : ''}`} onClick={() => navigate('loans')} data-tour="loans">My Loans</button>
               <button className={`${styles.link} ${page === 'notifications' ? styles.active : ''}`} onClick={() => navigate('notifications')}>
                 Notifications {notifCount > 0 && <span className={styles.badge}>{notifCount}</span>}
@@ -259,6 +261,7 @@ export default function Nav({ page, setPage, user, profile, notifCount, onSignIn
           { p: 'barter',  icon: '🤝', label: 'Barter' },
           ...(user ? [
             { p: 'loans',         icon: '📦', label: 'My Loans' },
+            { p: 'messages',      icon: '💬', label: 'Messages' },
             { p: 'notifications', icon: '🔔', label: 'Notifications' },
             { p: 'profile',       icon: '👤', label: 'Profile' },
             ...(profile?.is_admin ? [{ p: 'admin', icon: '🛡', label: 'Admin' }] : [])
