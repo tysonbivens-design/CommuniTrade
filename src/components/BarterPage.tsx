@@ -17,7 +17,6 @@ function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): 
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-// ─── Fire-and-forget match feedback ──────────────────────────────────────────
 function recordFeedback(matchId: string, userId: string, feedback: 'good' | 'bad') {
   fetch('/api/match-feedback', {
     method: 'POST',
@@ -26,10 +25,8 @@ function recordFeedback(matchId: string, userId: string, feedback: 'good' | 'bad
   }).catch(() => {})
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
-
 export default function BarterPage({ ctx }: { ctx: AppCtx }) {
-  const { user, profile, showToast, requireAuth } = ctx
+  const { user, profile, showToast, requireAuth, navigate } = ctx
   const supabase = createBrowserClient()
 
   const [posts, setPosts] = useState<BarterPost[]>([])
@@ -67,103 +64,85 @@ export default function BarterPage({ ctx }: { ctx: AppCtx }) {
         return
       }
 
-      let results = (data as BarterPost[]) || []
-
-      if (userId && userLat && userLng && radiusMiles) {
-        results = results.filter(post => {
-          if (post.user_id === userId) return true
-          if (!post.profiles?.lat || !post.profiles?.lng) return true
-          return distanceMiles(userLat, userLng, post.profiles.lat, post.profiles.lng) <= radiusMiles
-        })
-      }
-
-      setPosts(results)
-
-      if (userId) {
-        const { data: m, error: matchError } = await supabase
-          .from('barter_matches')
-          .select('*, post_a:barter_posts!post_a_id(*, profiles(full_name, avatar_color)), post_b:barter_posts!post_b_id(*, profiles(full_name, avatar_color))')
-          .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
-          .eq('status', 'pending')
-
-        if (!cancelled && !matchError) setMatches(m as BarterMatch[])
-      }
-
+      setPosts((data || []) as BarterPost[])
       setLoading(false)
     }
 
     loadPosts()
     return () => { cancelled = true }
-  }, [tab, userId, userLat, userLng, radiusMiles])
+  }, [])
 
-  const filteredPosts = tab === 'all' || tab === 'matches'
-    ? posts
-    : posts.filter(p => p.have_category === tab || p.want_category === tab)
+  useEffect(() => {
+    if (!userId) return
+    let cancelled = false
+
+    async function loadMatches() {
+      const { data } = await supabase
+        .from('barter_matches')
+        .select('*, post_a:barter_posts!barter_matches_post_a_id_fkey(*, profiles(full_name, avatar_color, avatar_url)), post_b:barter_posts!barter_matches_post_b_id_fkey(*, profiles(full_name, avatar_color, avatar_url))')
+        .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+
+      if (!cancelled && data) setMatches(data as BarterMatch[])
+    }
+
+    loadMatches()
+    return () => { cancelled = true }
+  }, [userId])
+
+  const filteredPosts = posts.filter(post => {
+    if (post.user_id === userId) return false
+    if (!userLat || !userLng || !radiusMiles) return true
+    const lat = post.profiles?.lat
+    const lng = post.profiles?.lng
+    if (!lat || !lng) return true
+    return distanceMiles(userLat, userLng, lat, lng) <= radiusMiles
+  })
 
   async function removePost(postId: string) {
-    if (!userId) return
-    if (!window.confirm('Close this trade post? It will be removed from the board.')) return
-    const { error } = await supabase.from('barter_posts').update({ status: 'closed' }).eq('id', postId).eq('user_id', userId)
-    if (error) { showToast(error.message, 'error'); return }
+    await supabase.from('barter_posts').update({ status: 'closed' }).eq('id', postId)
     setPosts(p => p.filter(x => x.id !== postId))
-    showToast('Trade post closed')
+    showToast('Post closed')
   }
 
-  async function dismissMatch(matchId: string) {
-    const { error } = await supabase.from('barter_matches').update({ status: 'declined' }).eq('id', matchId)
-    if (error) { showToast(error.message, 'error'); return }
-    setMatches(m => m.filter(x => x.id !== matchId))
-    showToast('Match dismissed')
-  }
-
-  async function clearAllMatches() {
+  function handleFeedback(matchId: string, feedback: 'good' | 'bad') {
     if (!userId) return
-    if (!window.confirm('Dismiss all matches? This cannot be undone.')) return
-    const { error } = await supabase
-      .from('barter_matches')
-      .update({ status: 'declined' })
-      .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
-      .eq('status', 'pending')
-    if (error) { showToast(error.message, 'error'); return }
-    setMatches([])
-    showToast('All matches cleared')
+    recordFeedback(matchId, userId, feedback)
   }
-
-  const radiusNote = userId && radiusMiles
-    ? `Showing trades within ${radiusMiles} miles of you`
-    : 'Post what you have, find what you need. Matches happen automatically.'
 
   return (
     <div style={{ position: 'relative', zIndex: 1 }}>
       <div className="container">
         <div className="section">
-          <div className={styles.header}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
             <div>
               <h1 className="section-title">Barter Board</h1>
-              <p className="section-subtitle">{radiusNote}</p>
+              <p className="section-subtitle">Trade skills, goods, and services with your neighbors</p>
             </div>
-            <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>+ Post a Trade</button>
+            <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))} data-tour="barter">
+              + Post a Trade
+            </button>
           </div>
 
-          <div className="tabs">
-            <button className={`tab ${tab === 'all' ? 'active' : ''}`} onClick={() => setTab('all')}>All Posts</button>
+          <div className="tabs" style={{ marginBottom: '1.5rem' }}>
+            <button className={`tab ${tab === 'all' ? 'active' : ''}`} onClick={() => setTab('all')}>
+              All Posts
+            </button>
             {userId && (
               <button className={`tab ${tab === 'matches' ? 'active' : ''}`} onClick={() => setTab('matches')}>
                 My Matches
                 {matches.length > 0 && (
-                  <span style={{ background: 'var(--rust)', color: '#fff', borderRadius: 10, padding: '0.1rem 0.4rem', fontSize: '0.72rem', marginLeft: '0.3rem' }}>
+                  <span style={{ background: 'var(--rust)', color: '#fff', borderRadius: 10, padding: '0.05rem 0.4rem', fontSize: '0.72rem', marginLeft: '0.3rem' }}>
                     {matches.length}
                   </span>
                 )}
               </button>
             )}
-            {BARTER_CATEGORIES.map(c => (
-              <button key={c} className={`tab ${tab === c ? 'active' : ''}`} onClick={() => setTab(c)}>{c}</button>
-            ))}
           </div>
 
           {loading ? (
-            <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>Loading...</div>
+            <p style={{ color: 'var(--muted)' }}>Loading...</p>
           ) : error ? (
             <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}>⚠️ {error}</div>
           ) : tab === 'matches' ? (
@@ -171,12 +150,12 @@ export default function BarterPage({ ctx }: { ctx: AppCtx }) {
               matches={matches}
               userId={userId}
               onConnect={(match) => setConnectTarget({ match })}
-              onDismiss={dismissMatch}
-              onClearAll={clearAllMatches}
-              onFeedback={(matchId, feedback) => userId && recordFeedback(matchId, userId, feedback)}
+              onDismiss={(matchId) => setMatches(m => m.filter(x => x.id !== matchId))}
+              onClearAll={() => setMatches([])}
+              onFeedback={handleFeedback}
             />
           ) : (
-            <div className={styles.grid}>
+            <div className="grid-3">
               {filteredPosts.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)', gridColumn: '1/-1' }}>
                   <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>📋</div>
@@ -216,28 +195,27 @@ export default function BarterPage({ ctx }: { ctx: AppCtx }) {
       {connectTarget && (
         <ContactModal
           title="Connect with your match"
-          subtitle="Your email will be shared. Add extra contact info if you'd like."
-          ctaText="Connect"
+          subtitle="Start an in-app conversation to arrange your trade."
+          ctaText="Start Conversation"
           onClose={() => setConnectTarget(null)}
-          onSubmit={async (contactInfo) => {
+          onSubmit={async () => {
             const { match } = connectTarget
-            const theirPost = match.user_a_id === userId ? match.post_b : match.post_a
             const theirId = match.user_a_id === userId ? match.user_b_id : match.user_a_id
             if (!userId || !theirId) return
-            await fetch('/api/notify', {
+            await fetch('/api/messages', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                type: 'barter_message',
-                postOwnerId: theirId,
                 senderId: userId,
-                haveDescription: theirPost?.have_description || '',
-                wantDescription: theirPost?.want_description || '',
-                contactInfo,
+                recipientId: theirId,
+                body: 'Hey! I think we have a barter match. Want to connect?',
+                contextType: 'barter',
+                contextId: match.id,
               }),
             })
             setConnectTarget(null)
-            showToast('Connected! They will receive your contact info')
+            navigate('messages')
+            showToast('Conversation started!')
           }}
         />
       )}
@@ -245,25 +223,26 @@ export default function BarterPage({ ctx }: { ctx: AppCtx }) {
       {messageTarget && (
         <ContactModal
           title="Message this trader"
-          subtitle={`Your email will be shared with ${messageTarget.post.profiles?.full_name?.split(' ')[0]}. Add extra contact info if you'd like.`}
+          subtitle={`Send ${messageTarget.post.profiles?.full_name?.split(' ')[0]} a message about their post.`}
           ctaText="Send Message"
           onClose={() => setMessageTarget(null)}
-          onSubmit={async (contactInfo) => {
+          onSubmit={async () => {
             const { post } = messageTarget
-            await fetch('/api/notify', {
+            if (!userId) return
+            await fetch('/api/messages', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                type: 'barter_message',
-                postOwnerId: post.user_id,
                 senderId: userId,
-                haveDescription: post.have_description,
-                wantDescription: post.want_description,
-                contactInfo,
+                recipientId: post.user_id,
+                body: 'Hey! I saw your barter post and wanted to reach out.',
+                contextType: 'barter',
+                contextId: post.id,
               }),
             })
             setMessageTarget(null)
-            showToast('Message sent! Your contact info will be shared')
+            navigate('messages')
+            showToast('Conversation started!')
           }}
         />
       )}
@@ -283,7 +262,6 @@ interface MatchesGridProps {
 }
 
 function MatchesGrid({ matches, userId, onConnect, onDismiss, onClearAll, onFeedback }: MatchesGridProps) {
-  // Track local feedback state so buttons update immediately
   const [feedback, setFeedback] = useState<Record<string, 'good' | 'bad'>>({})
 
   function handleFeedback(matchId: string, value: 'good' | 'bad') {
@@ -317,29 +295,37 @@ function MatchesGrid({ matches, userId, onConnect, onDismiss, onClearAll, onFeed
           const myFeedback = feedback[m.id]
           return (
             <div key={m.id} className={styles.matchCard}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <div className={styles.matchBanner}>Barter Match!</div>
+              <div className={styles.matchHeader}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Avatar
+                    name={theirPost?.profiles?.full_name}
+                    avatarUrl={theirPost?.profiles?.avatar_url}
+                    color={theirPost?.profiles?.avatar_color}
+                    size={28}
+                  />
+                  <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>{theirPost?.profiles?.full_name}</span>
+                </div>
                 <button
                   onClick={() => onDismiss(m.id)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', fontSize: '1rem', lineHeight: 1, padding: '0.2rem' }}
-                  title="Dismiss match"
-                >x</button>
+                  style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: '1rem' }}
+                >
+                  x
+                </button>
               </div>
-              <div className={styles.sides}>
-                <div className={styles.side}>
-                  <div className={styles.sideLabel} style={{ color: 'var(--sage)' }}>You Offer</div>
-                  <div className={styles.sideContent}>{myPost?.have_description}</div>
+
+              <div className={styles.matchBody}>
+                <div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--muted)', marginBottom: '0.2rem' }}>You offer</div>
+                  <div style={{ fontSize: '0.88rem' }}>{myPost?.have_description}</div>
                 </div>
-                <div className={styles.arrow}>vs</div>
-                <div className={styles.side}>
-                  <div className={styles.sideLabel} style={{ color: 'var(--rust)' }}>They Offer</div>
-                  <div className={styles.sideContent}>{theirPost?.have_description}</div>
+                <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: '0.8rem' }}>vs</div>
+                <div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--muted)', marginBottom: '0.2rem' }}>They offer</div>
+                  <div style={{ fontSize: '0.88rem' }}>{theirPost?.have_description}</div>
                 </div>
               </div>
 
-              {/* Thumbs feedback */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', margin: '0.75rem 0 0.5rem' }}>
-                <span style={{ fontSize: '0.72rem', color: 'var(--muted)', marginRight: '0.25rem' }}>Good match?</span>
+              <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.75rem' }}>
                 <button
                   onClick={() => handleFeedback(m.id, 'good')}
                   title="Good match"
@@ -347,7 +333,6 @@ function MatchesGrid({ matches, userId, onConnect, onDismiss, onClearAll, onFeed
                     background: myFeedback === 'good' ? 'var(--sage)' : 'var(--cream)',
                     border: '1.5px solid var(--border)', borderRadius: 6,
                     padding: '0.2rem 0.5rem', cursor: 'pointer', fontSize: '0.85rem',
-                    transition: 'all 0.15s',
                   }}
                 >
                   👍
@@ -359,13 +344,12 @@ function MatchesGrid({ matches, userId, onConnect, onDismiss, onClearAll, onFeed
                     background: myFeedback === 'bad' ? '#FEECEC' : 'var(--cream)',
                     border: '1.5px solid var(--border)', borderRadius: 6,
                     padding: '0.2rem 0.5rem', cursor: 'pointer', fontSize: '0.85rem',
-                    transition: 'all 0.15s',
                   }}
                 >
                   👎
                 </button>
                 {myFeedback && (
-                  <span style={{ fontSize: '0.72rem', color: 'var(--muted)', marginLeft: '0.25rem' }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--muted)', marginLeft: '0.25rem', alignSelf: 'center' }}>
                     Thanks for the feedback!
                   </span>
                 )}
@@ -438,18 +422,17 @@ interface ContactModalProps {
   subtitle: string
   ctaText: string
   onClose: () => void
-  onSubmit: (contactInfo: string) => Promise<void>
+  onSubmit: () => Promise<void>
 }
 
 function ContactModal({ title, subtitle, ctaText, onClose, onSubmit }: ContactModalProps) {
-  const [contactInfo, setContactInfo] = useState('')
   const [agreed, setAgreed] = useState(false)
   const [loading, setLoading] = useState(false)
 
   async function handle(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
-    try { await onSubmit(contactInfo) } finally { setLoading(false) }
+    try { await onSubmit() } finally { setLoading(false) }
   }
 
   return (
@@ -459,17 +442,8 @@ function ContactModal({ title, subtitle, ctaText, onClose, onSubmit }: ContactMo
         <h2 className={modalStyles.title}>{title}</h2>
         <p className={modalStyles.subtitle}>{subtitle}</p>
         <form onSubmit={handle}>
-          <div className="form-group">
-            <label className="label">Additional contact info (optional)</label>
-            <input
-              className="input"
-              value={contactInfo}
-              onChange={e => setContactInfo(e.target.value)}
-              placeholder="Phone, WhatsApp, Signal, etc."
-            />
-          </div>
           <div style={{ background: 'var(--cream)', borderRadius: 8, padding: '0.75rem', marginBottom: '1rem', fontSize: '0.82rem', color: 'var(--muted)' }}>
-            Your registered email will be shared so you can arrange the trade.
+            A conversation will be started in your Messages tab. You can exchange contact details there.
           </div>
           <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', cursor: 'pointer', fontSize: '0.83rem', color: 'var(--bark)', marginBottom: '1rem' }}>
             <input
@@ -551,11 +525,11 @@ function AddBarterModal({ userId, onClose, onSuccess, showToast }: AddBarterModa
       <div className={modalStyles.modal}>
         <button className={modalStyles.close} onClick={onClose}>x</button>
         <h2 className={modalStyles.title}>Post a Trade</h2>
-        <p className={modalStyles.subtitle}>We will match you automatically with neighbors who have/want what you do</p>
+        <p className={modalStyles.subtitle}>Tell the community what you have and what you want</p>
         <form onSubmit={submit}>
           <div className="form-group">
-            <label className="label">I Have / Can Offer *</label>
-            <input className="input" value={form.have_description} onChange={set('have_description')} placeholder="e.g. Fresh sourdough bread" required />
+            <label className="label">I have / I offer</label>
+            <input className="input" required value={form.have_description} onChange={set('have_description')} placeholder="e.g. Fresh sourdough bread, guitar lessons, a drill..." />
           </div>
           <div className="form-group">
             <label className="label">Category</label>
@@ -564,8 +538,8 @@ function AddBarterModal({ userId, onClose, onSuccess, showToast }: AddBarterModa
             </select>
           </div>
           <div className="form-group">
-            <label className="label">I Want / Am Looking For *</label>
-            <input className="input" value={form.want_description} onChange={set('want_description')} placeholder="e.g. Help with gardening" required />
+            <label className="label">I want / I seek</label>
+            <input className="input" required value={form.want_description} onChange={set('want_description')} placeholder="e.g. Help moving furniture, homemade jam, a ladder..." />
           </div>
           <div className="form-group">
             <label className="label">Category</label>
@@ -575,7 +549,7 @@ function AddBarterModal({ userId, onClose, onSuccess, showToast }: AddBarterModa
           </div>
           <div className="form-group">
             <label className="label">Notes (optional)</label>
-            <textarea className="input" rows={2} value={form.notes} onChange={set('notes')} placeholder="Any details worth mentioning..." />
+            <textarea className="input" rows={2} value={form.notes} onChange={set('notes')} placeholder="Any extra details..." />
           </div>
           <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
             {loading ? <span className="spinner" /> : 'Post Trade'}
