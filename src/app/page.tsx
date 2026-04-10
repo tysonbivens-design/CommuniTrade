@@ -22,6 +22,8 @@ import InstallPrompt from '@/components/InstallPrompt'
 import PushPrompt from '@/components/PushPrompt'
 import type { Profile } from '@/types'
 import FeedbackButton from '@/components/FeedbackButton'
+import MessagesPage from '@/components/MessagesPage'
+
 
 import type { Page } from '@/types'
 export type { Page }
@@ -42,6 +44,8 @@ export default function App() {
   const [showTour, setShowTour]           = useState(false)
   const [showInstall, setShowInstall]     = useState(false)
   const [showPushNudge, setShowPushNudge] = useState(false)
+  const [msgCount, setMsgCount] = useState(0)
+
 
   async function maybeNudgePush(uid: string) {
     if (typeof window === 'undefined') return
@@ -213,6 +217,7 @@ export default function App() {
       {page === 'barter'        && <BarterPage ctx={ctx} />}
       {page === 'loans'         && <LoansPage ctx={ctx} />}
       {page === 'notifications' && <NotificationsPage ctx={ctx} onRead={() => loadNotifCount(user?.id ?? '')} />}
+      {page === 'messages'      && <MessagesPage ctx={ctx} />}
       {page === 'profile'       && <ProfilePage ctx={ctx} onProfileUpdate={loadProfile} />}
       {page === 'admin'         && profile?.is_admin && <AdminPage ctx={ctx} />}
       {page === 'support'       && <SupportPage ctx={ctx} />}
