@@ -67,6 +67,23 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
     return () => { cancelled = true }
   }, [userId])
 
+  async function startLoanConversation(loan: Loan) {
+    if (!userId) return
+    const recipientId = tab === 'lent' ? loan.borrower_id : loan.lender_id
+    await fetch('/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        senderId: userId,
+        recipientId,
+        body: `Hi! Messaging about "${loan.items?.title}".`,
+        contextType: 'loan',
+        contextId: loan.id,
+      }),
+    }).catch(() => {})
+    navigate('messages')
+  }
+
   async function approveRequest(req: LoanRequest) {
     if (!userId || !req.items) return
     const dueAt = new Date()
@@ -277,7 +294,7 @@ export default function LoansPage({ ctx }: { ctx: AppCtx }) {
                     onConfirmReturn={lenderConfirmReturn}
                     onMarkReturned={borrowerMarkReturned}
                     onSendReminder={sendReminder}
-                    onMessage={() => navigate('messages')}
+                    onMessage={startLoanConversation}
                     isOverdue={isOverdue}
                     formatDate={formatDate}
                   />
