@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/email'
+import { supabaseAdmin, APP_URL } from '@/lib/email'
 import { sendPushToUser } from '@/lib/webpush'
-import { APP_URL } from '@/lib/email'
 
 // ─── Vercel Cron — runs daily at 11am UTC ─────────────────────────────────────
 // Finds items added in the last 24 hours and notifies nearby users
 // Max 1 proximity push per user per day to avoid spam
-
-const PROXIMITY_BATCH_KEY = 'ct_proximity_sent'
 
 function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 3958.8
@@ -30,7 +27,7 @@ export async function GET(req: NextRequest) {
   let skipped = 0
 
   try {
-    // Fetch items added in the last 24 hours (not archived, not by deleted users)
+    // Fetch items added in the last 24 hours
     const { data: newItems } = await supabaseAdmin
       .from('items')
       .select('id, title, category, offer_type, user_id, profiles!inner(id, lat, lng, full_name)')
@@ -51,10 +48,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ sent, skipped, message: 'No subscribers' })
     }
 
-    // Track who we've already notified today (one push per user max)
+    // Track who we have already notified today (one push per user max)
     const notifiedToday = new Set<string>()
 
-    // For each subscriber, find the most relevant new item near them
     for (const sub of subscribers) {
       const profile = sub.profiles as any
       if (!profile?.lat || !profile?.lng) { skipped++; continue }
@@ -63,7 +59,7 @@ export async function GET(req: NextRequest) {
       const userLng = profile.lng as number
       const radiusMiles = (profile.radius_miles as number) || 25
 
-      // Find new items within radius that aren't from this user
+      // Find new items within radius that are not from this user
       const nearbyItems = newItems.filter(item => {
         if (item.user_id === sub.user_id) return false
         const ownerProfile = item.profiles as any
@@ -75,7 +71,7 @@ export async function GET(req: NextRequest) {
       if (!nearbyItems.length) { skipped++; continue }
       if (notifiedToday.has(sub.user_id)) { skipped++; continue }
 
-      // Pick the most interesting item — prefer lend/free over swap/barter
+      // Pick the most relevant item — prefer free/lend over swap/barter
       const priority = ['free', 'lend', 'swap', 'barter']
       const sorted = [...nearbyItems].sort((a, b) =>
         priority.indexOf(a.offer_type) - priority.indexOf(b.offer_type)
@@ -104,14 +100,18 @@ export async function GET(req: NextRequest) {
         url: `${APP_URL}?page=library`,
       }).catch(() => {})
 
-      // In-app notification
-      void supabaseAdmin.from('notifications').insert({
+      // Save in-app notification — properly awaited
+      const { error: notifError } = await supabaseAdmin.from('notifications').insert({
         user_id: sub.user_id,
         type: 'loan_request',
         title,
         body,
         data: { page: 'library', item_id: item.id },
       })
+
+      if (notifError) {
+        console.error(`Failed to save proximity notification for user ${sub.user_id}:`, notifError.message)
+      }
 
       notifiedToday.add(sub.user_id)
       sent++
