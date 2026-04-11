@@ -184,33 +184,35 @@ Your neighbors are ready to borrow — be the first to share something!`,
 
 async function sendBarterNudge(user: { id: string; email: string; full_name: string | null }) {
   const firstName = esc(user.full_name?.split(' ')[0] || 'neighbor')
-
+ 
   await Promise.all([
     resend.emails.send({
       from: FROM,
       to: user.email,
-      subject: '🤝 Got something to trade? Post your first barter offer!',
+      subject: 'What do you have to offer your neighbors?',
       html: emailTemplate({
-        heading: 'Trade skills and goods with your neighbors 🤝',
+        heading: 'Trade skills, art, and goods with your neighbors',
         body: `Hi ${firstName},<br><br>
-Did you know CommuniTrade has a barter board? You can trade skills, services, or goods with neighbors — no money involved.<br><br>
-Got guitar lessons to offer? Looking for help with your garden? Post what you have and what you want, and we'll automatically match you with a neighbor who's a fit.<br><br>
-It only takes a minute to post your first trade!`,
-        ctaText: 'Post My First Trade →',
+CommuniTrade has a barter board where neighbors trade without money changing hands.<br><br>
+Teach guitar. Swap homemade jam for help in the garden. Trade your art for someone's extra lumber. Offer a skill you have, and ask for something you need.<br><br>
+Post what you have and what you are looking for — our matching system will alert you the moment a neighbor is a fit.<br><br>
+What do you have to offer?`,
+        ctaText: 'Post My First Trade',
         ctaUrl: `${APP_URL}?page=barter`,
       }),
     }),
     sendPushToUser(user.id, {
-      title: 'Post your first trade 🤝',
-      body: 'Trade skills or goods with neighbors. Post what you have, get what you need!',
+      title: 'What do you have to offer?',
+      body: 'Trade skills, art, or goods with your neighbors — no money needed.',
       url: `${APP_URL}?page=barter`,
     }).catch(() => {}),
     supabaseAdmin.from('notifications').insert({
       user_id: user.id,
       type: 'activation_barter',
-      title: 'Post your first trade 🤝',
-      body: 'Trade skills or goods with neighbors — no money needed. Post your first barter offer!',
+      title: 'What do you have to offer?',
+      body: 'Trade skills, art, or goods with your neighbors. Post your first barter offer!',
       data: { cta_page: 'barter' },
     }),
   ])
 }
+ 
