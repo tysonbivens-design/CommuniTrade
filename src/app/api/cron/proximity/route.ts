@@ -105,13 +105,13 @@ export async function GET(req: NextRequest) {
       }).catch(() => {})
 
       // In-app notification
-      await supabaseAdmin.from('notifications').insert({
+      void supabaseAdmin.from('notifications').insert({
         user_id: sub.user_id,
         type: 'loan_request',
         title,
         body,
         data: { page: 'library', item_id: item.id },
-      }).catch(() => {})
+      })
 
       notifiedToday.add(sub.user_id)
       sent++
