@@ -24,6 +24,8 @@ import type { Profile } from '@/types'
 import FeedbackButton from '@/components/FeedbackButton'
 import MessagesPage from '@/components/MessagesPage'
 import IOSInstallBanner from '@/components/IOSInstallBanner'
+import PushNudgeBanner from '@/components/PushNudgeBanner'
+{user && <PushNudgeBanner userId={user.id} />}
 
 
 import type { Page } from '@/types'
