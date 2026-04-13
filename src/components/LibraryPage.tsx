@@ -219,15 +219,33 @@ export default function LibraryPage({ ctx, initialModal, onModalOpened, initialI
             <div className={styles.loadingGrid}>{[...Array(8)].map((_, i) => <div key={i} className={styles.skeleton} />)}</div>
           ) : error ? (
             <div className={styles.empty}><div className={styles.emptyIcon}>⚠️</div><h3>Something went wrong</h3><p>{error}</p></div>
-          ) : filteredItems.length === 0 ? (
+         ) : filteredItems.length === 0 ? (
             <div className={styles.empty}>
               <div className={styles.emptyIcon}>📚</div>
-              <h3>Nothing matches</h3>
-              <p>{activeFilterCount > 0 ? 'Try clearing some filters.' : userId && radiusMiles ? `No items within ${radiusMiles} miles.` : 'Be the first to add something!'}</p>
-              {activeFilterCount > 0
-                ? <button className="btn btn-outline" onClick={() => { setOfferType(''); setGenre('') }}>Clear Filters</button>
-                : <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>Add the first item</button>}
+              <h3>Nothing here yet</h3>
+              {activeFilterCount > 0 ? (
+                <>
+                  <p>No items match your current filters.</p>
+                  <button className="btn btn-outline" onClick={() => { setOfferType(''); setGenre('') }}>Clear Filters</button>
+                </>
+              ) : userId && radiusMiles ? (
+                <>
+                  <p>No items found within {radiusMiles} miles of you.</p>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginTop: '-0.75rem' }}>
+                    Try increasing your radius — tap the location pill in the top bar.
+                  </p>
+                  <button className="btn btn-primary" style={{ marginTop: '0.5rem' }} onClick={() => requireAuth(() => setShowAdd(true))}>
+                    Add the first item
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p>Be the first to add something to the community library!</p>
+                  <button className="btn btn-primary" onClick={() => requireAuth(() => setShowAdd(true))}>Add the first item</button>
+                </>
+              )}
             </div>
+ 
           ) : (
             <>
               <div className="grid-4">
